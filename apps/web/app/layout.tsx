@@ -4,7 +4,6 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@multica/ui/components/ui/sonner";
 import { cn } from "@multica/ui/lib/utils";
 import { WebProviders } from "@/components/web-providers";
-import { LocaleSync } from "@/components/locale-sync";
 import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
@@ -62,7 +61,6 @@ export default function RootLayout({
       className={cn("antialiased font-sans h-full", geist.variable, geistMono.variable)}
     >
       <body className="h-full overflow-hidden">
-        <LocaleSync />
         <ThemeProvider>
           <WebProviders>
             {children}

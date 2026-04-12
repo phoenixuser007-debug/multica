@@ -13,9 +13,7 @@ Date-stamped engineering plans and design notes.
 | `2026-04-08-board-dnd-rewrite.md` | Repository documentation or design note. |
 | `2026-04-08-drag-upload-enhancement.md` | Repository documentation or design note. |
 | `2026-04-08-image-view-enhancement.md` | Repository documentation or design note. |
-| `2026-04-08-monorepo-extraction.md` | Repository documentation or design note. |
 | `2026-04-09-desktop-app.md` | Repository documentation or design note. |
-| `2026-04-09-monorepo-extraction.md` | Repository documentation or design note. |
 | `2026-04-09-upload-attachment-fixes.md` | Repository documentation or design note. |
 
 ## Subdirectories

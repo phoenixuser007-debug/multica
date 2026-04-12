@@ -7,9 +7,7 @@
 Repository-level documentation, product notes, and implementation plans outside the shipped docs site.
 
 ## Key Files
-| File | Description |
-| --- | --- |
-| `design.md` | Repository documentation or design note. |
+No direct source files live here; this directory mainly organizes subdirectories.
 
 ## Subdirectories
 | Directory | Purpose |

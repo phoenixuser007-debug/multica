@@ -13,7 +13,6 @@ Localization resources and helpers for landing pages.
 | `en.ts` | Source file local to this directory. |
 | `index.ts` | Barrel export for the directory or package. |
 | `types.ts` | Source file local to this directory. |
-| `zh.ts` | Source file local to this directory. |
 
 ## Subdirectories
 No documented subdirectories.
