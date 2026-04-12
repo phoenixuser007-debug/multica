@@ -501,6 +501,7 @@ func (d *Daemon) handlePing(ctx context.Context, rt Runtime, pingID string) {
 	defer cancel()
 
 	session, err := backend.Execute(pingCtx, "Respond with exactly one word: pong", agent.ExecOptions{
+		Model:    entry.Model,
 		MaxTurns: 1,
 		Timeout:  60 * time.Second,
 	})
@@ -981,6 +982,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, taskLo
 		Model:           entry.Model,
 		Timeout:         d.cfg.AgentTimeout,
 		ResumeSessionID: task.PriorSessionID,
+		ApprovalPolicy:  entry.ApprovalPolicy,
+		Sandbox:         entry.Sandbox,
 	})
 	if err != nil {
 		return TaskResult{}, err

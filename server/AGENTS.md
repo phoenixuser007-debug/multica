@@ -1,0 +1,48 @@
+<!-- Parent: ../AGENTS.md -->
+<!-- Generated: 2026-04-11 | Updated: 2026-04-11 -->
+
+# server
+
+## Purpose
+Go backend workspace containing HTTP handlers, daemon logic, migrations, and reusable backend packages.
+
+## Key Files
+| File | Description |
+| --- | --- |
+| `go.mod` | Go module definition for backend dependencies. |
+| `go.sum` | Checksums for Go module dependencies. |
+| `sqlc.yaml` | sqlc generation configuration for database access code. |
+
+## Subdirectories
+| Directory | Purpose |
+| --- | --- |
+| `cmd/` | Executable entrypoints for the API server, CLI, and migration runner. See `cmd/AGENTS.md`. |
+| `internal/` | Internal backend packages implementing domain logic, handlers, middleware, and runtime orchestration. See `internal/AGENTS.md`. |
+| `migrations/` | Ordered PostgreSQL schema migrations applied by the backend. See `migrations/AGENTS.md`. |
+| `pkg/` | Reusable backend packages and generated database access layers. See `pkg/AGENTS.md`. |
+
+## For AI Agents
+
+### Working In This Directory
+- Keep changes scoped to this directory and follow existing naming and layering patterns.
+- Prefer extending existing modules over introducing parallel abstractions without a clear need.
+
+### Testing Requirements
+- Run `cd server && go test ./...` or a targeted `go test` package for backend changes.
+- Regenerate sqlc output with `make sqlc` after editing files under `server/pkg/db/queries/`.
+
+### Common Patterns
+- Follow the closest existing local pattern before inventing a new one.
+- Prefer small, scoped edits so this directory stays easy to navigate.
+
+## Dependencies
+
+### Internal
+- See the root `AGENTS.md` for top-level repository relationships.
+
+### External
+- `github.com/go-chi/chi` for HTTP routing.
+- `github.com/gorilla/websocket` for realtime transport.
+- `sqlc`-generated database access driven by the SQL sources in this repo.
+
+<!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

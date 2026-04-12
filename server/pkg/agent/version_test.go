@@ -14,6 +14,7 @@ func TestParseSemver(t *testing.T) {
 		{"v2.1.100", semver{2, 1, 100}, false},
 		{"2.1.100 (Claude Code)", semver{2, 1, 100}, false},
 		{"codex-cli 0.118.0", semver{0, 118, 0}, false},
+		{"GitHub Copilot CLI 1.0.24.", semver{1, 0, 24}, false},
 		{"1.0.20", semver{1, 0, 20}, false},
 		{"invalid", semver{}, true},
 		{"", semver{}, true},

@@ -1,5 +1,5 @@
 // Package agent provides a unified interface for executing prompts via
-// coding agents (Claude Code, Codex, OpenCode, OpenClaw, Hermes). It mirrors the happy-cli AgentBackend
+// coding agents (Claude Code, Codex, GitHub Copilot, OpenCode, OpenClaw, Hermes). It mirrors the happy-cli AgentBackend
 // pattern, translated to idiomatic Go.
 package agent
 
@@ -26,6 +26,8 @@ type ExecOptions struct {
 	MaxTurns        int
 	Timeout         time.Duration
 	ResumeSessionID string // if non-empty, resume a previous agent session
+	ApprovalPolicy  string // agent-specific approval policy (e.g. codex: "full-auto")
+	Sandbox         string // agent-specific sandbox mode (e.g. codex: "danger-full-auto")
 }
 
 // Session represents a running agent execution.
@@ -82,13 +84,13 @@ type Result struct {
 
 // Config configures a Backend instance.
 type Config struct {
-	ExecutablePath string            // path to CLI binary (claude, codex, opencode, openclaw, or hermes)
+	ExecutablePath string            // path to CLI binary (claude, codex, copilot, opencode, openclaw, or hermes)
 	Env            map[string]string // extra environment variables
 	Logger         *slog.Logger
 }
 
 // New creates a Backend for the given agent type.
-// Supported types: "claude", "codex", "opencode", "openclaw", "hermes".
+// Supported types: "claude", "codex", "copilot", "opencode", "openclaw", "hermes".
 func New(agentType string, cfg Config) (Backend, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -99,6 +101,8 @@ func New(agentType string, cfg Config) (Backend, error) {
 		return &claudeBackend{cfg: cfg}, nil
 	case "codex":
 		return &codexBackend{cfg: cfg}, nil
+	case "copilot":
+		return &copilotBackend{cfg: cfg}, nil
 	case "opencode":
 		return &opencodeBackend{cfg: cfg}, nil
 	case "openclaw":
@@ -106,7 +110,7 @@ func New(agentType string, cfg Config) (Backend, error) {
 	case "hermes":
 		return &hermesBackend{cfg: cfg}, nil
 	default:
-		return nil, fmt.Errorf("unknown agent type: %q (supported: claude, codex, opencode, openclaw, hermes)", agentType)
+		return nil, fmt.Errorf("unknown agent type: %q (supported: claude, codex, copilot, opencode, openclaw, hermes)", agentType)
 	}
 }
 

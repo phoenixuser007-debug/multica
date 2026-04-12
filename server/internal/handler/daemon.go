@@ -120,7 +120,7 @@ type DaemonRegisterRequest struct {
 	Runtimes    []struct {
 		Name    string `json:"name"`
 		Type    string `json:"type"`
-		Version string `json:"version"` // agent CLI version (claude/codex)
+		Version string `json:"version"` // agent CLI version
 		Status  string `json:"status"`
 	} `json:"runtimes"`
 }

@@ -5,6 +5,11 @@ export function createSubmitExtension(onSubmit: () => void) {
     name: "submitShortcut",
     addKeyboardShortcuts() {
       return {
+        Enter: () => {
+          onSubmit();
+          return true;
+        },
+        "Shift-Enter": () => false,
         "Mod-Enter": () => {
           onSubmit();
           return true;

@@ -422,6 +422,7 @@ function formatProvider(provider: string): string {
     claude: "Claude Code",
     "claude-code": "Claude Code",
     codex: "Codex",
+    copilot: "GitHub Copilot",
   };
   return map[provider.toLowerCase()] ?? provider;
 }

@@ -361,6 +361,40 @@ GET /health
 
 Use this for load balancer health checks or monitoring.
 
+## Setting Up the Agent Daemon
+
+Each team member who wants to run AI agents locally needs to:
+
+1. **Install the CLI**
+
+   ```bash
+   brew tap multica-ai/tap
+   brew install multica
+   ```
+
+2. **Install an AI agent CLI** — at least one of:
+   - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude` on PATH)
+   - [Codex](https://github.com/openai/codex) (`codex` on PATH)
+   - [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli) (`copilot` on PATH)
+
+3. **Authenticate and start**
+
+   ```bash
+   # Point CLI to your server
+   export MULTICA_APP_URL=https://app.example.com
+   export MULTICA_SERVER_URL=wss://api.example.com/ws
+
+   # Login (opens browser)
+   multica login
+
+   # Start the daemon
+   multica daemon start
+   ```
+
+   > **Note:** Use `https://` and `wss://` for production deployments behind a TLS-terminating reverse proxy. For local or development deployments without TLS, use `http://` and `ws://` instead.
+
+The daemon auto-detects installed agent CLIs and registers itself with the server.
+
 ## Upgrading
 
 1. Pull the latest code or image
