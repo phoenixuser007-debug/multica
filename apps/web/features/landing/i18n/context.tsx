@@ -1,41 +1,22 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext } from "react";
 import { en } from "./en";
-import { zh } from "./zh";
-import type { LandingDict, Locale } from "./types";
-
-const dictionaries: Record<Locale, LandingDict> = { en, zh };
-
-const COOKIE_NAME = "multica-locale";
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
+import type { LandingDict } from "./types";
 
 type LocaleContextValue = {
-  locale: Locale;
   t: LandingDict;
-  setLocale: (locale: Locale) => void;
 };
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
 export function LocaleProvider({
   children,
-  initialLocale = "en",
 }: {
   children: React.ReactNode;
-  initialLocale?: Locale;
 }) {
-  const [locale, setLocaleState] = useState<Locale>(initialLocale);
-
-  const setLocale = useCallback((l: Locale) => {
-    setLocaleState(l);
-    document.cookie = `${COOKIE_NAME}=${l}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
-  }, []);
-
   return (
-    <LocaleContext.Provider
-      value={{ locale, t: dictionaries[locale], setLocale }}
-    >
+    <LocaleContext.Provider value={{ t: en }}>
       {children}
     </LocaleContext.Provider>
   );

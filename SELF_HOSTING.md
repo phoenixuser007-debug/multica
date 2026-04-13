@@ -77,7 +77,7 @@ brew install multica-ai/tap/multica
 You also need at least one AI agent CLI installed:
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude` on PATH)
 - [Codex](https://github.com/openai/codex) (`codex` on PATH)
-- [OpenClaw](https://github.com/openclaw/openclaw) (`openclaw` on PATH)
+- [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/agents/copilot-cli) (`copilot` on PATH)
 - [OpenCode](https://github.com/anomalyco/opencode) (`opencode` on PATH)
 
 ### b) One-command setup

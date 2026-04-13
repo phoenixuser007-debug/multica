@@ -107,7 +107,7 @@ export const en: LandingDict = {
         {
           title: "Auto-detection & plug-and-play",
           description:
-            "Multica detects available CLIs like Claude Code, Codex, OpenClaw, and OpenCode automatically. Connect a machine, and it\u2019s ready to work.",
+            "Multica detects available CLIs like Claude Code, Codex, GitHub Copilot CLI, and OpenCode automatically. Connect a machine, and it\u2019s ready to work.",
         },
       ],
     },
@@ -126,7 +126,7 @@ export const en: LandingDict = {
       {
         title: "Install the CLI & connect your machine",
         description:
-          "Run multica login to authenticate, then multica daemon start. The daemon auto-detects Claude Code, Codex, OpenClaw, and OpenCode on your machine \u2014 plug in and go.",
+          "Run multica login to authenticate, then multica daemon start. The daemon auto-detects Claude Code, Codex, GitHub Copilot CLI, and OpenCode on your machine \u2014 plug in and go.",
       },
       {
         title: "Create your first agent",
@@ -181,7 +181,7 @@ export const en: LandingDict = {
       {
         question: "What coding agents does Multica support?",
         answer:
-          "Multica currently supports Claude Code, Codex, OpenClaw, and OpenCode out of the box. The daemon auto-detects whichever CLIs you have installed. Since it\u2019s open source, you can also add your own backends.",
+          "Multica currently supports Claude Code, Codex, GitHub Copilot CLI, and OpenCode out of the box. The daemon auto-detects whichever CLIs you have installed. Since it\u2019s open source, you can also add your own backends.",
       },
       {
         question: "Do I need to self-host, or is there a cloud version?",
@@ -325,7 +325,6 @@ export const en: LandingDict = {
         changes: [],
         features: [
           "Full-stack Docker Compose for one-command self-hosting",
-          "Hermes Agent Provider via ACP protocol",
           "Documentation site with Fumadocs (Getting Started, CLI reference, Agents guide)",
           "Mobile-responsive sidebar and inbox layout",
           "Token usage display per issue in the detail sidebar",
@@ -333,7 +332,7 @@ export const en: LandingDict = {
           "'C' keyboard shortcut for quick issue creation",
           "Chat session history panel for archived conversations",
           "Minimum CLI version check in daemon for Claude Code and Codex",
-          "OpenClaw and OpenCode added to landing page",
+          "OpenCode added to landing page",
           "`make dev` one-command local development setup",
         ],
         improvements: [
@@ -399,10 +398,9 @@ export const en: LandingDict = {
       {
         version: "0.1.18",
         date: "2026-04-07",
-        title: "OAuth, OpenClaw & Issue Loading",
+        title: "OAuth & Issue Loading",
         changes: [
           "Google OAuth login",
-          "OpenClaw runtime support for running agents on OpenClaw infrastructure",
           "Redesigned agent live card — always sticky with manual expand/collapse toggle",
           "Load all open issues without pagination limit; closed issues paginate on scroll",
           "JWT and CloudFront cookie expiration extended from 72 hours to 30 days",
@@ -464,7 +462,6 @@ export const en: LandingDict = {
         title: "My Issues & i18n",
         changes: [
           "My Issues page with kanban board, list view, and scope tabs",
-          "Simplified Chinese localization for the landing page",
           "About and Changelog pages for the marketing site",
           "Agent avatar upload in settings",
           "Attachment support for CLI comments and issue/comment APIs",
