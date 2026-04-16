@@ -1,0 +1,65 @@
+apps/docs/content/docs/guides/agents.mdx
+  9a3de3ec11db133a 18
+server/internal/handler/repos.go
+  2807e65e1fdd0abd 1-149
+server/internal/handler/jira.go
+  2807e65e1fdd0abd 1-321
+apps/docs/content/docs/guides/quickstart.mdx
+  9a3de3ec11db133a 14,24
+packages/views/modals/cve-remediation.tsx
+  2807e65e1fdd0abd 1-720
+apps/docs/content/docs/getting-started/cloud-quickstart.mdx
+  9a3de3ec11db133a 14,48,58
+server/internal/handler/slack.go
+  2807e65e1fdd0abd 1-106
+apps/docs/content/docs/index.mdx
+  9a3de3ec11db133a 10,27
+apps/docs/content/docs/cli/installation.mdx
+  9a3de3ec11db133a 81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "e009c551370191ee37dee3cb33897b9f6581c942",
+  "prompts": {
+    "2807e65e1fdd0abd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6a0dcd20-bb90-44f8-9371-863a75e4f6c8",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 4552,
+      "total_deletions": 476,
+      "accepted_lines": 1299,
+      "overriden_lines": 0
+    },
+    "696cedc7cc240ca9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3ff89148-1d49-4def-a730-fd604e0b50a3",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 18,
+      "total_deletions": 6,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    },
+    "9a3de3ec11db133a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9511f762-5de5-4a93-be2b-0782e6bb2c18",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 19,
+      "total_deletions": 519,
+      "accepted_lines": 16,
+      "overriden_lines": 3
+    }
+  }
+}
