@@ -727,6 +727,34 @@ func (h *Handler) ListChildIssues(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
+	wsID := resolveWorkspaceID(r)
+	wsUUID := parseUUID(wsID)
+
+	rows, err := h.Queries.ChildIssueProgress(r.Context(), wsUUID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get child issue progress")
+		return
+	}
+
+	type progressEntry struct {
+		ParentIssueID string `json:"parent_issue_id"`
+		Total         int64  `json:"total"`
+		Done          int64  `json:"done"`
+	}
+	resp := make([]progressEntry, len(rows))
+	for i, row := range rows {
+		resp[i] = progressEntry{
+			ParentIssueID: uuidToString(row.ParentIssueID),
+			Total:         row.Total,
+			Done:          row.Done,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"progress": resp,
+	})
+}
+
 type CreateIssueRequest struct {
 	Title              string   `json:"title"`
 	Description        *string  `json:"description"`
@@ -762,7 +790,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 
 	status := req.Status
 	if status == "" {
-		status = "backlog"
+		status = "todo"
 	}
 	priority := req.Priority
 	if priority == "" {
@@ -787,6 +815,10 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var parentIssueID pgtype.UUID
+	var projectID pgtype.UUID
+	if req.ProjectID != nil {
+		projectID = parseUUID(*req.ProjectID)
+	}
 	if req.ParentIssueID != nil {
 		parentIssueID = parseUUID(*req.ParentIssueID)
 		// Validate parent exists in the same workspace.
@@ -797,6 +829,9 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		if err != nil || !parent.ID.Valid {
 			writeError(w, http.StatusBadRequest, "parent issue not found in this workspace")
 			return
+		}
+		if req.ProjectID == nil {
+			projectID = parent.ProjectID
 		}
 	}
 
@@ -844,7 +879,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		Position:           0,
 		DueDate:            dueDate,
 		Number:             issueNumber,
-		ProjectID:          func() pgtype.UUID { if req.ProjectID != nil { return parseUUID(*req.ProjectID) }; return pgtype.UUID{} }(),
+		ProjectID:          projectID,
 	})
 	if err != nil {
 		slog.Warn("create issue failed", append(logger.RequestAttrs(r), "error", err, "workspace_id", workspaceID)...)
@@ -882,7 +917,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	slog.Info("issue created", append(logger.RequestAttrs(r), "issue_id", uuidToString(issue.ID), "title", issue.Title, "status", issue.Status, "workspace_id", workspaceID)...)
 	h.publish(protocol.EventIssueCreated, workspaceID, creatorType, actualCreatorID, map[string]any{"issue": resp})
 
-	// Only ready issues in todo are enqueued for agents.
+	// Enqueue agent task when an agent-assigned issue is created.
 	if issue.AssigneeType.Valid && issue.AssigneeID.Valid {
 		if h.shouldEnqueueAgentTask(r.Context(), issue) {
 			h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
@@ -1077,14 +1112,30 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		"creator_id":          uuidToString(prevIssue.CreatorID),
 	})
 
-	// Reconcile task queue when assignee changes (not on status changes —
-	// agents manage issue status themselves via the CLI).
+	// Reconcile task queue when assignee changes.
 	if assigneeChanged {
 		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 
 		if h.shouldEnqueueAgentTask(r.Context(), issue) {
 			h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
 		}
+	}
+
+	// Trigger the assigned agent when a member moves an issue out of backlog.
+	// Backlog acts as a parking lot — moving to an active status signals the
+	// issue is ready for work.
+	if statusChanged && !assigneeChanged && actorType == "member" &&
+		prevIssue.Status == "backlog" && issue.Status != "done" && issue.Status != "cancelled" {
+		if h.isAgentAssigneeReady(r.Context(), issue) {
+			h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
+		}
+	}
+
+	// Cancel active tasks when the issue is cancelled by a user.
+	// This is distinct from agent-managed status transitions — cancellation
+	// is a user-initiated terminal action that should stop execution.
+	if statusChanged && issue.Status == "cancelled" {
+		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -1121,12 +1172,15 @@ func (h *Handler) canAssignAgent(ctx context.Context, r *http.Request, agentID, 
 	return false, "cannot assign to private agent"
 }
 
-// shouldEnqueueAgentTask returns true when an issue assignment should trigger
-// the assigned agent. No status gate — assignment is an explicit human action,
-// so it should trigger regardless of issue status (e.g. assigning an agent to
-// a done issue to fix a discovered problem).
-// All trigger types (on_assign, on_comment, on_mention) are always enabled.
+// shouldEnqueueAgentTask returns true when an issue creation or assignment
+// should trigger the assigned agent. Backlog issues are skipped — backlog
+// acts as a parking lot where issues can be pre-assigned without immediately
+// triggering execution. Moving out of backlog is handled separately in
+// UpdateIssue.
 func (h *Handler) shouldEnqueueAgentTask(ctx context.Context, issue db.Issue) bool {
+	if issue.Status == "backlog" {
+		return false
+	}
 	return h.isAgentAssigneeReady(ctx, issue)
 }
 
@@ -1177,6 +1231,8 @@ func (h *Handler) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
+	// Fail any linked autopilot runs before delete (ON DELETE SET NULL clears issue_id).
+	h.Queries.FailAutopilotRunsByIssue(r.Context(), issue.ID)
 
 	// Collect all attachment URLs (issue-level + comment-level) before CASCADE delete.
 	attachmentURLs, _ := h.Queries.ListAttachmentURLsByIssueOrComments(r.Context(), issue.ID)
@@ -1252,6 +1308,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			AssigneeID:    prevIssue.AssigneeID,
 			DueDate:       prevIssue.DueDate,
 			ParentIssueID: prevIssue.ParentIssueID,
+			ProjectID:     prevIssue.ProjectID,
 		}
 
 		if req.Updates.Title != nil {
@@ -1295,6 +1352,50 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		if _, ok := rawUpdates["parent_issue_id"]; ok {
+			if req.Updates.ParentIssueID != nil {
+				newParentID := parseUUID(*req.Updates.ParentIssueID)
+				// Cannot set self as parent.
+				if uuidToString(newParentID) == issueID {
+					continue
+				}
+				// Validate parent exists in the same workspace.
+				if _, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
+					ID:          newParentID,
+					WorkspaceID: prevIssue.WorkspaceID,
+				}); err != nil {
+					continue
+				}
+				// Cycle detection: walk up from the new parent to ensure we don't reach this issue.
+				cycleDetected := false
+				cursor := newParentID
+				for depth := 0; depth < 10; depth++ {
+					ancestor, err := h.Queries.GetIssue(r.Context(), cursor)
+					if err != nil || !ancestor.ParentIssueID.Valid {
+						break
+					}
+					if uuidToString(ancestor.ParentIssueID) == issueID {
+						cycleDetected = true
+						break
+					}
+					cursor = ancestor.ParentIssueID
+				}
+				if cycleDetected {
+					continue
+				}
+				params.ParentIssueID = newParentID
+			} else {
+				params.ParentIssueID = pgtype.UUID{Valid: false}
+			}
+		}
+		if _, ok := rawUpdates["project_id"]; ok {
+			if req.Updates.ProjectID != nil {
+				params.ProjectID = parseUUID(*req.Updates.ProjectID)
+			} else {
+				params.ProjectID = pgtype.UUID{Valid: false}
+			}
+		}
+
 		// Enforce agent visibility for batch assignment.
 		if req.Updates.AssigneeType != nil && *req.Updates.AssigneeType == "agent" && req.Updates.AssigneeID != nil {
 			if ok, _ := h.canAssignAgent(r.Context(), r, *req.Updates.AssigneeID, workspaceID); !ok {
@@ -1329,6 +1430,19 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			if h.shouldEnqueueAgentTask(r.Context(), issue) {
 				h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
 			}
+		}
+
+		// Trigger agent when moving out of backlog (batch).
+		if statusChanged && !assigneeChanged && actorType == "member" &&
+			prevIssue.Status == "backlog" && issue.Status != "done" && issue.Status != "cancelled" {
+			if h.isAgentAssigneeReady(r.Context(), issue) {
+				h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
+			}
+		}
+
+		// Cancel active tasks when the issue is cancelled by a user.
+		if statusChanged && issue.Status == "cancelled" {
+			h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 		}
 
 		updated++
@@ -1371,11 +1485,17 @@ func (h *Handler) BatchDeleteIssues(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
+		h.Queries.FailAutopilotRunsByIssue(r.Context(), issue.ID)
 
-		if err := h.Queries.DeleteIssue(r.Context(), parseUUID(issueID)); err != nil {
+		// Collect attachment URLs before CASCADE delete to clean up S3 objects.
+		attachmentURLs, _ := h.Queries.ListAttachmentURLsByIssueOrComments(r.Context(), issue.ID)
+
+		if err := h.Queries.DeleteIssue(r.Context(), issue.ID); err != nil {
 			slog.Warn("batch delete issue failed", "issue_id", issueID, "error", err)
 			continue
 		}
+
+		h.deleteS3Objects(r.Context(), attachmentURLs)
 
 		actorType, actorID := h.resolveActor(r, userID, workspaceID)
 		h.publish(protocol.EventIssueDeleted, workspaceID, actorType, actorID, map[string]any{"issue_id": issueID})
