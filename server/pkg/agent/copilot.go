@@ -33,14 +33,12 @@ func (b *copilotBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 
 	args := []string{
-		"-p", prompt,
 		"--output-format", "json",
 		"--stream", "on",
 		"--allow-all-tools",
 		"--allow-all-paths",
 		"--allow-all-urls",
 		"--no-ask-user",
-		"--no-auto-update",
 	}
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
@@ -48,6 +46,7 @@ func (b *copilotBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 	if opts.ResumeSessionID != "" {
 		args = append(args, "--resume="+opts.ResumeSessionID)
 	}
+	args = append(args, "-p", prompt)
 	if opts.SystemPrompt != "" {
 		b.cfg.Logger.Warn("copilot does not expose a direct system-prompt flag; relying on repository instructions instead")
 	}

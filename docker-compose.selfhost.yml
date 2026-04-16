@@ -38,6 +38,8 @@ services:
       - "${PORT:-8080}:8080"
     volumes:
       - backend_uploads:/app/data/uploads
+      - /root/dev-env/ws:/root/dev-env/ws
+      - /root/.ssh:/root/.ssh:ro
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-multica}:${POSTGRES_PASSWORD:-multica}@postgres:5432/${POSTGRES_DB:-multica}?sslmode=disable
       PORT: "8080"
@@ -56,6 +58,8 @@ services:
       CLOUDFRONT_PRIVATE_KEY: ${CLOUDFRONT_PRIVATE_KEY:-}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       MULTICA_APP_URL: ${MULTICA_APP_URL:-http://localhost:3000}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      JIRA_TOKEN: ${JIRA_TOKEN:-}
 
   frontend:
     build:

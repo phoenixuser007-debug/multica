@@ -306,3 +306,83 @@ All queries filter by `workspace_id`. Membership checks gate access. `X-Workspac
 ## Agent Assignees
 
 Assignees are polymorphic — can be a member or an agent. `assignee_type` + `assignee_id` on issues. Agents render with distinct styling (purple background, robot icon).
+
+## CVE Remediation Pipeline
+
+A one-click automated CVE remediation workflow accessible via the shield button (🛡) in the Issues header.
+
+### What it does
+
+1. **Clone** — clones any missing repos from `ssh://git@stash.arubanetworks.com/gvt/<repo>.git` into `/root/dev-env/ws/` on the host (depth-1, `devel` branch).
+2. **Jira** — creates/reuses one CNX Story per component group and one CNX Sub-task per repo (searches by JQL first to avoid duplicates for the same month).
+3. **Multica hierarchy** — creates one parent issue per component group (mirroring the Jira Story), then one sub-issue per repo (mirroring the Jira Sub-task) with `parent_issue_id` set. Sub-issue titles are `CNX-XXXXXX: CVE Remediation: <repo>`.
+4. **Agent dispatch** — all sub-issues are assigned to the Java Dev Agent which runs the trivy scan, fixes pom.xml, runs the ctl quality gate, and raises a PR.
+
+### Key implementation files
+
+| File | Purpose |
+|------|---------|
+| `packages/views/modals/cve-remediation.tsx` | Modal UI — repo list, clone/Jira/issue steps |
+| `packages/core/issues/mutations.ts` | `useCVERemediation` hook + `buildCVEIssueDescription` |
+| `server/internal/handler/repos.go` | `GET /api/repos/status`, `POST /api/repos/clone` |
+| `server/internal/handler/jira.go` | `POST /api/jira/cve-tickets` — Jira REST API calls |
+| `server/internal/handler/slack.go` | `POST /api/slack/cve-done` — Slack webhook on completion |
+
+### Repo list and component mapping
+
+Canonical repo list lives in both `CVE_REPO_LIST` (`cve-remediation.tsx`) and `cveRepoList` (`repos.go`) — keep them in sync. Component group → Jira component mapping:
+
+| Repo prefix | Component group | Jira component |
+|-------------|----------------|----------------|
+| `bridge-5g-*` | Bridge 5G | Bridge Monitoring |
+| `edge-platform-*` | Edge Platform | Edge Platform |
+| `edge-plugin-*` | Edge Plugin | Edge App Config |
+| `iotops-client-location-*` | Edge Location | Edge Location Engine |
+| `iotops-client-*` | IoTOps Client | Unified Client - Non IP |
+| `iotops-*` | IoTOps | IoT |
+| `ui-*` | UI Edge Platform | Edge Platform UI |
+
+`COMPONENT_PROJECT_MAP` in `cve-remediation.tsx` must be an **ordered array** (not an object) so longer prefixes match before shorter ones (e.g. `iotops-client-location` before `iotops-client`).
+
+### Path conventions
+
+- **Host path** (git operations, agent running on host): `/root/dev-env/ws/<repo>`
+- **Container path** (docker exec commands inside `dev-env-dev-1`): `/home/dev/repo/ws/<repo>`
+
+`CVERemediationRepo` carries both `hostPath` and `path`. Issue descriptions use `hostPath` for `cd` / `git` commands and `path` for `docker exec` build commands. **Do NOT use `multica repo checkout`** for CVE repos — they are pre-cloned to the host path.
+
+### Environment variables required
+
+| Variable | Where needed | How set |
+|----------|-------------|---------|
+| `JIRA_TOKEN` | Backend container + host daemon | `.env` → Docker env; `/etc/environment` on host |
+| `SLACK_WEBHOOK_URL` | Backend container + host daemon | `.env` → Docker env; `/etc/environment` on host |
+
+The daemon must be restarted after adding to `/etc/environment` to pick up the values.
+
+### Agent issue instructions (already-clean path)
+
+When trivy reports 0 HIGH / 0 CRITICAL, the agent skips Steps 4–5 (ctl + PR) and goes directly to Step 6: transition Jira to **Resolve Issue**, set Multica issue to `done`, POST to `/api/slack/cve-done` with `pr_title = "Already clean — no PR needed"`.
+
+### Slack notification endpoint
+
+`POST /api/slack/cve-done` (requires `Authorization` + `X-Workspace-ID` headers):
+```json
+{
+  "repo": "edge-platform-core",
+  "jira_key": "CNX-240415",
+  "jira_url": "https://jira.arubanetworks.com/browse/CNX-240415",
+  "pr_title": "CNX-240415: chore: CVE remediation edge-platform-core",
+  "pr_url": "https://stash.arubanetworks.com/...",
+  "cve_high_before": 3,
+  "cve_critical_before": 1,
+  "cve_high_after": 0,
+  "cve_critical_after": 0
+}
+```
+
+## Daemon Task Dispatch
+
+The daemon poll loop (`server/internal/daemon/daemon.go`) drains the full task queue in a single poll cycle — it keeps claiming tasks across all runtimes until either the concurrency semaphore is full (`MaxConcurrentTasks`, default 20) or all runtimes return empty. It only sleeps `PollInterval` (default 1s) when no tasks were found.
+
+**Do not revert to `break` after claiming one task** — that was the original bug that caused 3-minute startup delays when many issues were created at once (one claim per 3s sleep cycle).

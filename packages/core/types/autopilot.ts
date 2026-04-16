@@ -24,6 +24,7 @@ export interface Autopilot {
   last_run_at: string | null;
   created_at: string;
   updated_at: string;
+  retry_on_blocked: boolean;
 }
 
 export interface AutopilotTrigger {
@@ -65,6 +66,7 @@ export interface CreateAutopilotRequest {
   priority?: string;
   execution_mode: AutopilotExecutionMode;
   issue_title_template?: string;
+  retry_on_blocked?: boolean;
 }
 
 export interface UpdateAutopilotRequest {
@@ -76,6 +78,7 @@ export interface UpdateAutopilotRequest {
   status?: AutopilotStatus;
   execution_mode?: AutopilotExecutionMode;
   issue_title_template?: string | null;
+  retry_on_blocked?: boolean;
 }
 
 export interface CreateAutopilotTriggerRequest {

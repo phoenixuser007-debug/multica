@@ -102,12 +102,12 @@ const createAutopilot = `-- name: CreateAutopilot :one
 INSERT INTO autopilot (
     workspace_id, project_id, title, description, assignee_id,
     priority, status, execution_mode, issue_title_template,
-    created_by_type, created_by_id
+    created_by_type, created_by_id, retry_on_blocked
 ) VALUES (
     $1, $9, $2, $10, $3,
     $4, $5, $6, $11,
-    $7, $8
-) RETURNING id, workspace_id, project_id, title, description, assignee_id, priority, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at
+    $7, $8, $12
+) RETURNING id, workspace_id, project_id, title, description, assignee_id, priority, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, retry_on_blocked
 `
 
 type CreateAutopilotParams struct {
@@ -122,6 +122,7 @@ type CreateAutopilotParams struct {
 	ProjectID          pgtype.UUID `json:"project_id"`
 	Description        pgtype.Text `json:"description"`
 	IssueTitleTemplate pgtype.Text `json:"issue_title_template"`
+	RetryOnBlocked     bool        `json:"retry_on_blocked"`
 }
 
 func (q *Queries) CreateAutopilot(ctx context.Context, arg CreateAutopilotParams) (Autopilot, error) {
@@ -137,6 +138,7 @@ func (q *Queries) CreateAutopilot(ctx context.Context, arg CreateAutopilotParams
 		arg.ProjectID,
 		arg.Description,
 		arg.IssueTitleTemplate,
+		arg.RetryOnBlocked,
 	)
 	var i Autopilot
 	err := row.Scan(
@@ -155,6 +157,7 @@ func (q *Queries) CreateAutopilot(ctx context.Context, arg CreateAutopilotParams
 		&i.LastRunAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RetryOnBlocked,
 	)
 	return i, err
 }
@@ -337,7 +340,7 @@ func (q *Queries) FailAutopilotRunsByIssue(ctx context.Context, issueID pgtype.U
 }
 
 const getAutopilot = `-- name: GetAutopilot :one
-SELECT id, workspace_id, project_id, title, description, assignee_id, priority, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at FROM autopilot
+SELECT id, workspace_id, project_id, title, description, assignee_id, priority, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, retry_on_blocked FROM autopilot
 WHERE id = $1
 `
 
@@ -360,12 +363,13 @@ func (q *Queries) GetAutopilot(ctx context.Context, id pgtype.UUID) (Autopilot, 
 		&i.LastRunAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RetryOnBlocked,
 	)
 	return i, err
 }
 
 const getAutopilotInWorkspace = `-- name: GetAutopilotInWorkspace :one
-SELECT id, workspace_id, project_id, title, description, assignee_id, priority, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at FROM autopilot
+SELECT id, workspace_id, project_id, title, description, assignee_id, priority, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, retry_on_blocked FROM autopilot
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -393,6 +397,7 @@ func (q *Queries) GetAutopilotInWorkspace(ctx context.Context, arg GetAutopilotI
 		&i.LastRunAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RetryOnBlocked,
 	)
 	return i, err
 }
@@ -571,7 +576,7 @@ func (q *Queries) ListAutopilotTriggers(ctx context.Context, autopilotID pgtype.
 
 const listAutopilots = `-- name: ListAutopilots :many
 
-SELECT id, workspace_id, project_id, title, description, assignee_id, priority, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at FROM autopilot
+SELECT id, workspace_id, project_id, title, description, assignee_id, priority, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, retry_on_blocked FROM autopilot
 WHERE workspace_id = $1
   AND ($2::text IS NULL OR status = $2)
 ORDER BY created_at DESC
@@ -610,6 +615,7 @@ func (q *Queries) ListAutopilots(ctx context.Context, arg ListAutopilotsParams) 
 			&i.LastRunAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RetryOnBlocked,
 		); err != nil {
 			return nil, err
 		}
@@ -699,21 +705,23 @@ UPDATE autopilot SET
     status = COALESCE($7, status),
     execution_mode = COALESCE($8, execution_mode),
     issue_title_template = $9,
+    retry_on_blocked = COALESCE($10::boolean, retry_on_blocked),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, project_id, title, description, assignee_id, priority, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at
+RETURNING id, workspace_id, project_id, title, description, assignee_id, priority, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, retry_on_blocked
 `
 
 type UpdateAutopilotParams struct {
-	ID                 pgtype.UUID `json:"id"`
-	Title              pgtype.Text `json:"title"`
-	Description        pgtype.Text `json:"description"`
-	AssigneeID         pgtype.UUID `json:"assignee_id"`
-	ProjectID          pgtype.UUID `json:"project_id"`
-	Priority           pgtype.Text `json:"priority"`
-	Status             pgtype.Text `json:"status"`
-	ExecutionMode      pgtype.Text `json:"execution_mode"`
-	IssueTitleTemplate pgtype.Text `json:"issue_title_template"`
+	ID                 pgtype.UUID  `json:"id"`
+	Title              pgtype.Text  `json:"title"`
+	Description        pgtype.Text  `json:"description"`
+	AssigneeID         pgtype.UUID  `json:"assignee_id"`
+	ProjectID          pgtype.UUID  `json:"project_id"`
+	Priority           pgtype.Text  `json:"priority"`
+	Status             pgtype.Text  `json:"status"`
+	ExecutionMode      pgtype.Text  `json:"execution_mode"`
+	IssueTitleTemplate pgtype.Text  `json:"issue_title_template"`
+	RetryOnBlocked     pgtype.Bool  `json:"retry_on_blocked"`
 }
 
 func (q *Queries) UpdateAutopilot(ctx context.Context, arg UpdateAutopilotParams) (Autopilot, error) {
@@ -727,6 +735,7 @@ func (q *Queries) UpdateAutopilot(ctx context.Context, arg UpdateAutopilotParams
 		arg.Status,
 		arg.ExecutionMode,
 		arg.IssueTitleTemplate,
+		arg.RetryOnBlocked,
 	)
 	var i Autopilot
 	err := row.Scan(
@@ -745,6 +754,7 @@ func (q *Queries) UpdateAutopilot(ctx context.Context, arg UpdateAutopilotParams
 		&i.LastRunAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RetryOnBlocked,
 	)
 	return i, err
 }
@@ -937,4 +947,51 @@ func (q *Queries) UpdateAutopilotTrigger(ctx context.Context, arg UpdateAutopilo
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listBlockedAutopilotIssues = `-- name: ListBlockedAutopilotIssues :many
+SELECT i.id AS issue_id, i.workspace_id, i.origin_id AS autopilot_id
+FROM issue i
+JOIN autopilot a ON a.id = i.origin_id
+WHERE i.status = 'blocked'
+  AND i.origin_type = 'autopilot'
+  AND a.retry_on_blocked = true
+  AND a.status = 'active'
+  AND NOT EXISTS (
+      SELECT 1 FROM autopilot_run r
+      WHERE r.issue_id = i.id
+        AND r.status IN ('issue_created', 'running')
+  )
+`
+
+type ListBlockedAutopilotIssuesRow struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	AutopilotID pgtype.UUID `json:"autopilot_id"`
+}
+
+// Returns blocked issues that originated from a retry_on_blocked autopilot
+// and have no active run (so we don't double-dispatch).
+func (q *Queries) ListBlockedAutopilotIssues(ctx context.Context) ([]ListBlockedAutopilotIssuesRow, error) {
+	rows, err := q.db.Query(ctx, listBlockedAutopilotIssues)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListBlockedAutopilotIssuesRow{}
+	for rows.Next() {
+		var i ListBlockedAutopilotIssuesRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.WorkspaceID,
+			&i.AutopilotID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

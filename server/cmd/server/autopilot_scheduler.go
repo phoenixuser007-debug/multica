@@ -12,14 +12,22 @@ import (
 )
 
 const schedulerInterval = 30 * time.Second
+const retryBlockedInterval = 24 * time.Hour
 
 // runAutopilotScheduler polls for due schedule triggers and dispatches them.
+// It also runs a daily loop to retry blocked autopilot-origin issues.
 func runAutopilotScheduler(ctx context.Context, queries *db.Queries, svc *service.AutopilotService) {
 	// Recover triggers that were claimed but never advanced (e.g. after a crash).
 	recoverLostTriggers(ctx, queries)
 
+	// Run an initial retry pass at startup so blocked issues aren't stuck until tomorrow.
+	svc.RetryBlockedAutopilotIssues(ctx)
+
 	ticker := time.NewTicker(schedulerInterval)
 	defer ticker.Stop()
+
+	retryTicker := time.NewTicker(retryBlockedInterval)
+	defer retryTicker.Stop()
 
 	for {
 		select {
@@ -27,6 +35,8 @@ func runAutopilotScheduler(ctx context.Context, queries *db.Queries, svc *servic
 			return
 		case <-ticker.C:
 			tickScheduledAutopilots(ctx, queries, svc)
+		case <-retryTicker.C:
+			svc.RetryBlockedAutopilotIssues(ctx)
 		}
 	}
 }

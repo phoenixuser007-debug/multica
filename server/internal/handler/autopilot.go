@@ -37,6 +37,7 @@ type AutopilotResponse struct {
 	LastRunAt          *string `json:"last_run_at"`
 	CreatedAt          string  `json:"created_at"`
 	UpdatedAt          string  `json:"updated_at"`
+	RetryOnBlocked     bool    `json:"retry_on_blocked"`
 }
 
 type AutopilotTriggerResponse struct {
@@ -89,6 +90,7 @@ func autopilotToResponse(a db.Autopilot) AutopilotResponse {
 		LastRunAt:          timestampToPtr(a.LastRunAt),
 		CreatedAt:          timestampToString(a.CreatedAt),
 		UpdatedAt:          timestampToString(a.UpdatedAt),
+		RetryOnBlocked:     a.RetryOnBlocked,
 	}
 }
 
@@ -145,6 +147,7 @@ type CreateAutopilotRequest struct {
 	Priority           string  `json:"priority"`
 	ExecutionMode      string  `json:"execution_mode"`
 	IssueTitleTemplate *string `json:"issue_title_template"`
+	RetryOnBlocked     bool    `json:"retry_on_blocked"`
 }
 
 type UpdateAutopilotRequest struct {
@@ -156,6 +159,7 @@ type UpdateAutopilotRequest struct {
 	Status             *string `json:"status"`
 	ExecutionMode      *string `json:"execution_mode"`
 	IssueTitleTemplate *string `json:"issue_title_template"`
+	RetryOnBlocked     *bool   `json:"retry_on_blocked"`
 }
 
 type CreateAutopilotTriggerRequest struct {
@@ -290,6 +294,7 @@ func (h *Handler) CreateAutopilot(w http.ResponseWriter, r *http.Request) {
 		ProjectID:          projectID,
 		Description:        ptrToText(req.Description),
 		IssueTitleTemplate: ptrToText(req.IssueTitleTemplate),
+		RetryOnBlocked:     req.RetryOnBlocked,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create autopilot")
@@ -338,6 +343,7 @@ func (h *Handler) UpdateAutopilot(w http.ResponseWriter, r *http.Request) {
 		AssigneeID:         prev.AssigneeID,
 		ProjectID:          prev.ProjectID,
 		IssueTitleTemplate: prev.IssueTitleTemplate,
+		RetryOnBlocked:     pgtype.Bool{Bool: prev.RetryOnBlocked, Valid: true},
 	}
 	if req.Title != nil {
 		params.Title = pgtype.Text{String: *req.Title, Valid: true}
@@ -368,6 +374,9 @@ func (h *Handler) UpdateAutopilot(w http.ResponseWriter, r *http.Request) {
 		} else {
 			params.ProjectID = pgtype.UUID{Valid: false}
 		}
+	}
+	if req.RetryOnBlocked != nil {
+		params.RetryOnBlocked = pgtype.Bool{Bool: *req.RetryOnBlocked, Valid: true}
 	}
 
 	autopilot, err := h.Queries.UpdateAutopilot(r.Context(), params)

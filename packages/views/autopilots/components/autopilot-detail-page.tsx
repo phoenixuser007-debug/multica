@@ -146,7 +146,7 @@ function EditAutopilotDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  autopilot: { id: string; title: string; description?: string | null; assignee_id: string; priority: string; execution_mode: string; issue_title_template?: string | null };
+  autopilot: { id: string; title: string; description?: string | null; assignee_id: string; priority: string; execution_mode: string; issue_title_template?: string | null; retry_on_blocked?: boolean };
   agents: { id: string; name: string; archived_at?: string | null }[];
 }) {
   const updateAutopilot = useUpdateAutopilot();
@@ -155,6 +155,7 @@ function EditAutopilotDialog({
   const [assigneeId, setAssigneeId] = useState(autopilot.assignee_id);
   const [priority, setPriority] = useState(autopilot.priority);
   const [executionMode, setExecutionMode] = useState(autopilot.execution_mode);
+  const [retryOnBlocked, setRetryOnBlocked] = useState(autopilot.retry_on_blocked ?? false);
   const [submitting, setSubmitting] = useState(false);
 
   const activeAgents = agents.filter((a) => !a.archived_at);
@@ -166,6 +167,7 @@ function EditAutopilotDialog({
     setAssigneeId(autopilot.assignee_id);
     setPriority(autopilot.priority);
     setExecutionMode(autopilot.execution_mode);
+    setRetryOnBlocked(autopilot.retry_on_blocked ?? false);
   }, [autopilot]);
 
   const handleSubmit = async () => {
@@ -179,6 +181,7 @@ function EditAutopilotDialog({
         assignee_id: assigneeId,
         priority,
         execution_mode: executionMode as "create_issue" | "run_only",
+        retry_on_blocked: retryOnBlocked,
       });
       onOpenChange(false);
       toast.success("Autopilot updated");
@@ -273,6 +276,22 @@ function EditAutopilotDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Retry on blocked */}
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={retryOnBlocked}
+              onChange={(e) => setRetryOnBlocked(e.target.checked)}
+              className="h-4 w-4 rounded border accent-primary"
+            />
+            <span className="text-sm">
+              Retry when blocked
+              <span className="ml-1.5 text-xs text-muted-foreground">
+                Re-enqueue the agent daily if the issue gets stuck
+              </span>
+            </span>
+          </label>
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-1">

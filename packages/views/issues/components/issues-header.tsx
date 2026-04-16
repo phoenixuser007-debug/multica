@@ -12,6 +12,7 @@ import {
   FolderKanban,
   FolderMinus,
   List,
+  Shield,
   SignalHigh,
   SlidersHorizontal,
   User,
@@ -62,6 +63,7 @@ import {
 } from "@multica/core/issues/stores/issues-scope-store";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
 import type { Issue } from "@multica/core/types";
+import { CVERemediationModal } from "../../modals/cve-remediation";
 
 // ---------------------------------------------------------------------------
 // HoverCheck — shadcn official pattern (PR #6862)
@@ -383,6 +385,7 @@ function ProjectSubContent({
 export function IssuesHeader({ scopedIssues }: { scopedIssues: Issue[] }) {
   const scope = useIssuesScopeStore((s) => s.scope);
   const setScope = useIssuesScopeStore((s) => s.setScope);
+  const [cveModalOpen, setCveModalOpen] = useState(false);
 
   const viewMode = useViewStore((s) => s.viewMode);
   const statusFilters = useViewStore((s) => s.statusFilters);
@@ -442,6 +445,24 @@ export function IssuesHeader({ scopedIssues }: { scopedIssues: Issue[] }) {
 
       {/* Right: filter + display + view toggle */}
       <div className="flex items-center gap-1">
+        {/* CVE Remediation */}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="icon-sm"
+                className="text-muted-foreground"
+                onClick={() => setCveModalOpen(true)}
+              >
+                <Shield className="size-4" />
+              </Button>
+            }
+          />
+          <TooltipContent side="bottom">CVE Scan &amp; Remediation</TooltipContent>
+        </Tooltip>
+        <CVERemediationModal open={cveModalOpen} onClose={() => setCveModalOpen(false)} />
+
         {/* Filter */}
         <DropdownMenu>
           <Tooltip>

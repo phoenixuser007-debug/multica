@@ -114,6 +114,7 @@ type Autopilot struct {
 	LastRunAt          pgtype.Timestamptz `json:"last_run_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	RetryOnBlocked     bool               `json:"retry_on_blocked"`
 }
 
 type AutopilotRun struct {

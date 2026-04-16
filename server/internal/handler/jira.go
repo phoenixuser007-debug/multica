@@ -125,9 +125,10 @@ func (h *Handler) CreateCVEJiraTickets(w http.ResponseWriter, r *http.Request) {
 	storyKeys := map[string]string{}
 	for component, repos := range groups {
 		storyTitle := fmt.Sprintf("CVE Remediation: %s", component)
+		storyFullTitle := fmt.Sprintf("%s — %s", storyTitle, monthLabel)
 		jql := fmt.Sprintf(
-			`project = CNX AND issuetype = Story AND summary ~ "%s" AND summary ~ "%s" ORDER BY created DESC`,
-			storyTitle, monthLabel,
+			`project = CNX AND issuetype = Story AND summary = "%s" ORDER BY created DESC`,
+			storyFullTitle,
 		)
 		existing, err := jiraSearchFirst(r.Context(), token, jql)
 		if err == nil && existing != "" {
@@ -161,9 +162,10 @@ func (h *Handler) CreateCVEJiraTickets(w http.ResponseWriter, r *http.Request) {
 		parentKey := storyKeys[cg]
 
 		subtaskTitle := fmt.Sprintf("CVE Remediation: %s", repo)
+		subtaskFullTitle := fmt.Sprintf("%s — %s", subtaskTitle, monthLabel)
 		jql := fmt.Sprintf(
-			`project = CNX AND issuetype = "Sub-task" AND summary ~ "%s" AND summary ~ "%s" ORDER BY created DESC`,
-			subtaskTitle, monthLabel,
+			`project = CNX AND issuetype = "Sub-task" AND summary = "%s" ORDER BY created DESC`,
+			subtaskFullTitle,
 		)
 		existing, err := jiraSearchFirst(r.Context(), token, jql)
 		if err == nil && existing != "" {

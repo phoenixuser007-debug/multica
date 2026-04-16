@@ -758,7 +758,13 @@ func (d *Daemon) pollLoop(ctx context.Context) error {
 
 		claimed := false
 		n := len(runtimeIDs)
-		for i := 0; i < n; i++ {
+		consecutiveMisses := 0
+		for i := 0; ; i++ {
+			// Stop if all runtimes returned empty in a full sweep.
+			if consecutiveMisses >= n {
+				break
+			}
+
 			// Check if we have capacity before claiming.
 			select {
 			case sem <- struct{}{}:
@@ -774,6 +780,7 @@ func (d *Daemon) pollLoop(ctx context.Context) error {
 			if err != nil {
 				<-sem // Release the slot.
 				d.logger.Warn("claim task failed", "runtime_id", rid, "error", err)
+				consecutiveMisses++
 				continue
 			}
 			if task != nil {
@@ -791,11 +798,13 @@ func (d *Daemon) pollLoop(ctx context.Context) error {
 					d.handleTask(ctx, t)
 				}(*task)
 				claimed = true
+				consecutiveMisses = 0
 				pollOffset = (pollOffset + i + 1) % n
-				break
+				continue
 			}
 			// No task for this runtime, release the slot and try next.
 			<-sem
+			consecutiveMisses++
 		}
 
 	sleep:

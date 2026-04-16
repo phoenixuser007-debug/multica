@@ -318,6 +318,20 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus) chi.Route
 				})
 			})
 
+			// CVE repos
+			r.Route("/api/repos", func(r chi.Router) {
+				r.Get("/status", h.GetReposStatus)
+				r.Post("/clone", h.CloneRepos)
+			})
+
+			// Jira
+			r.Route("/api/jira", func(r chi.Router) {
+				r.Post("/cve-tickets", h.CreateCVEJiraTickets)
+			})
+
+			// Slack
+			r.Post("/api/slack/cve-done", h.NotifyCVEDone)
+
 			// Usage
 			r.Route("/api/usage", func(r chi.Router) {
 				r.Get("/daily", h.GetWorkspaceUsageByDay)

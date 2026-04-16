@@ -12,6 +12,280 @@ import type {
 import type { TimelineEntry, IssueSubscriber, Reaction } from "../types";
 
 // ---------------------------------------------------------------------------
+// CVE Remediation workflow
+// ---------------------------------------------------------------------------
+
+export interface CVERemediationRepo {
+  name: string;
+  /** Path inside the dev container (e.g. /home/dev/repo/ws/<repo>) — for docker exec commands */
+  path: string;
+  /** Path on the host (e.g. /root/dev-env/ws/<repo>) — for git operations run directly */
+  hostPath: string;
+  branch: string;
+  jiraSubtaskKey?: string;
+  jiraStoryKey?: string;
+  projectId?: string;
+  parentIssueId?: string;
+}
+
+export interface CVERemediationProgress {
+  total: number;
+  completed: number;
+  current: string | null;
+  issueIds: string[];
+  reusedIds: string[];
+  errors: { repo: string; error: string }[];
+}
+
+export function buildCVEIssueDescription(repo: CVERemediationRepo): string {
+  return [
+    `CVE scan and remediation for \`${repo.name}\`.`,
+    ``,
+    `**Repo path (container):** \`${repo.path}\``,
+    `**Repo path (host):** \`${repo.hostPath}\``,
+    `**Branch:** \`${repo.branch}\``,
+    ...(repo.jiraSubtaskKey ? [
+      `**Jira:** [${repo.jiraSubtaskKey}](https://jira.arubanetworks.com/browse/${repo.jiraSubtaskKey})` +
+      (repo.jiraStoryKey ? ` · Story: [${repo.jiraStoryKey}](https://jira.arubanetworks.com/browse/${repo.jiraStoryKey})` : ""),
+    ] : []),
+    ``,
+    `## State transitions — you own these`,
+    ``,
+    `| When | Multica | Jira (${repo.jiraSubtaskKey ?? "sub-task key"}) |`,
+    `|------|---------|------|`,
+    `| You start reading this task | \`todo\` | — |`,
+    `| You begin the trivy scan | \`in_progress\` | transition → **Assigned** |`,
+    `| Trivy scan is clean (0 HIGH 0 CRITICAL) — skip PR | \`done\` | transition → **Resolved** |`,
+    `| Before raising PR (CVEs found) | — | transition → **In Review** |`,
+    `| PR is open | \`in_review\` | — |`,
+    `| PR merged / ctl passes | \`done\` | — |`,
+    `| User comments on this issue | back to \`todo\` → \`in_progress\` | — |`,
+    ``,
+    `## Step 1 — Read project build instructions`,
+    ``,
+    `Check if \`${repo.path}/AGENTS.md\` exists:`,
+    `- **If it exists** — follow its instructions exactly for compile, test, and lint commands.`,
+    `- **If it does not exist** — use the standard \`tools/\` scripts (all run inside the dev container):`,
+    `\`\`\``,
+    `docker exec -w /home/dev/repo/ws/${repo.name} dev-env-dev-1 bash tools/compile.sh`,
+    `docker exec -w /home/dev/repo/ws/${repo.name} dev-env-dev-1 bash tools/unit-tests.sh`,
+    `docker exec -w /home/dev/repo/ws/${repo.name} dev-env-dev-1 bash tools/lint-source-code.sh`,
+    `docker exec -w /home/dev/repo/ws/${repo.name} dev-env-dev-1 bash tools/lint-k8s-objects.sh`,
+    `\`\`\``,
+    ``,
+    `## Step 2 — Sync to latest devel and prepare branch`,
+    ``,
+    `> **Important:** The repo is already cloned at \`${repo.hostPath}\` on the host. **Do NOT use \`multica repo checkout\`** — just use the path directly.`,
+    ``,
+    `Move this Multica issue to \`in_progress\` and transition the Jira sub-task to **Assigned**:`,
+    `\`\`\``,
+    ...(repo.jiraSubtaskKey
+      ? [`python3 /root/.claude/skills/jira-cli/scripts/jira.py transition ${repo.jiraSubtaskKey} "Assign"`]
+      : [`# python3 /root/.claude/skills/jira-cli/scripts/jira.py transition <JIRA-KEY> "Assign"`]),
+    `\`\`\``,
+    ``,
+    `Sync to latest devel — run these **every time** (on the host):`,
+    `\`\`\``,
+    `cd ${repo.hostPath}`,
+    `git checkout devel`,
+    `git pull origin devel`,
+    `git checkout -B ${repo.branch}`,
+    `\`\`\``,
+    `\`git checkout -B\` force-recreates the branch from the freshly pulled devel, discarding any previous scan attempt on that branch.`,
+    ``,
+    `## Step 3 — Scan and fix CVEs`,
+    ``,
+    `Run the **trivy-cve-remediation** skill. It will scan the built JARs and upgrade vulnerable dependency versions in \`pom.xml\`.`,
+    ``,
+    `**If trivy reports 0 HIGH and 0 CRITICAL** — the repo is already clean. Skip Steps 4–5 and go directly to Step 6 (already-clean path).`,
+    ``,
+    `## Step 4 — Quality gate (ctl)`,
+    ``,
+    `_(Skip this step if trivy was already clean in Step 3.)_`,
+    ``,
+    `Run the **ctl** skill to compile, test, and lint the repo using the build commands from Step 1.`,
+    ``,
+    `**If ctl fails:**`,
+    `- Read the error output carefully.`,
+    `- If a version bump broke an API: find the nearest compatible fixed version and update \`pom.xml\`.`,
+    `- If tests fail: fix the code or the test to match the new dependency behaviour.`,
+    `- Re-run ctl. Repeat until it passes. Do not move to \`in_review\` until ctl is green.`,
+    ``,
+    `## Step 5 — Raise PR`,
+    ``,
+    `_(Skip this step if trivy was already clean in Step 3 — no code changes were made, no PR needed.)_`,
+    ``,
+    `Once ctl is green, first transition Jira to **In Review**, then push and create the PR:`,
+    `\`\`\``,
+    ...(repo.jiraSubtaskKey
+      ? [`python3 /root/.claude/skills/jira-cli/scripts/jira.py transition ${repo.jiraSubtaskKey} "In Review"`]
+      : [`# python3 /root/.claude/skills/jira-cli/scripts/jira.py transition <JIRA-KEY> "In Review"`]),
+    `git push origin ${repo.branch} --force-with-lease`,
+    ...(repo.jiraSubtaskKey
+      ? [
+          `pr-cli create --title "${repo.jiraSubtaskKey}: chore: CVE remediation ${repo.name}" --description "Jira: ${repo.jiraSubtaskKey}\\n\\nAutomated CVE remediation via Trivy scan. ctl quality gate passed." --target devel`,
+        ]
+      : [
+          `pr-cli create --title "chore: CVE remediation ${repo.name}" --description "Automated CVE remediation via Trivy scan. ctl quality gate passed." --target devel`,
+        ]),
+    `\`\`\``,
+    `(Use \`--force-with-lease\` because the branch is force-recreated from devel each run.)`,
+    `Move Multica issue to \`in_review\`.`,
+    ``,
+    `## Step 6 — Done`,
+    ``,
+    `**Already-clean path** (trivy was 0→0, no PR raised):`,
+    `\`\`\``,
+    ...(repo.jiraSubtaskKey
+      ? [`python3 /root/.claude/skills/jira-cli/scripts/jira.py transition ${repo.jiraSubtaskKey} "Resolve Issue"`]
+      : [`# python3 /root/.claude/skills/jira-cli/scripts/jira.py transition <JIRA-KEY> "Resolve Issue"`]),
+    `\`\`\``,
+    ``,
+    `Move this Multica issue to \`done\`, then notify Slack:`,
+    `\`\`\``,
+    `curl -s -X POST http://localhost:8090/api/slack/cve-done \\`,
+    `  -H "Content-Type: application/json" \\`,
+    `  -H "X-Workspace-ID: $MULTICA_WORKSPACE_ID" \\`,
+    `  -H "Authorization: Bearer $MULTICA_TOKEN" \\`,
+    `  -d '{`,
+    `    "repo": "${repo.name}",`,
+    ...(repo.jiraSubtaskKey
+      ? [
+          `    "jira_key": "${repo.jiraSubtaskKey}",`,
+          `    "jira_url": "https://jira.arubanetworks.com/browse/${repo.jiraSubtaskKey}",`,
+        ]
+      : []),
+    `    "pr_title": "<PR title, or \\"Already clean — no PR needed\\" if trivy was 0→0>",`,
+    `    "pr_url": "<PR URL, or \\"\\" if no PR was raised>",`,
+    `    "cve_high_before": <HIGH count from trivy scan>,`,
+    `    "cve_critical_before": <CRITICAL count from trivy scan>,`,
+    `    "cve_high_after": <HIGH count after remediation — same as before if already clean>,`,
+    `    "cve_critical_after": <CRITICAL count after remediation — same as before if already clean>`,
+    `  }'`,
+    `\`\`\``,
+    `For CVE counts: parse the trivy scan output — count occurrences of "HIGH" and "CRITICAL" severity lines. If trivy was already clean (0→0), set both before and after counts to 0.`,
+    ``,
+    `## If the user comments`,
+    ``,
+    `When you receive a new comment on this issue at any point:`,
+    `1. Move issue to \`todo\` to acknowledge.`,
+    `2. Move to \`in_progress\` when you start addressing it.`,
+    `3. Read the comment, apply any changes requested, re-run ctl, update the PR.`,
+    `4. Move back to \`in_review\` (or \`done\` if fully resolved).`,
+  ].join("\n");
+}
+
+export function useCVERemediation() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  const [progress, setProgress] = useState<CVERemediationProgress>({
+    total: 0,
+    completed: 0,
+    current: null,
+    issueIds: [],
+    reusedIds: [],
+    errors: [],
+  });
+  const [isRunning, setIsRunning] = useState(false);
+
+  const run = useCallback(
+    async (repos: CVERemediationRepo[], agentId: string) => {
+      setIsRunning(true);
+      setProgress({ total: repos.length, completed: 0, current: null, issueIds: [], reusedIds: [], errors: [] });
+
+      const issueIds: string[] = [];
+      const reusedIds: string[] = [];
+      const errors: { repo: string; error: string }[] = [];
+
+      // Fetch all open CVE remediation issues once — avoids N individual searches
+      const monthLabel = new Date().toISOString().slice(0, 7); // "2026-04"
+      // Key: repo name (without Jira prefix) → { id, title }
+      let openIssuesByRepo = new Map<string, { id: string; title: string }>();
+      try {
+        const searchResp = await api.searchIssues({
+          q: `CVE Remediation`,
+          limit: 500,
+          include_closed: false,
+        });
+        for (const issue of searchResp.issues) {
+          if (issue.created_at.startsWith(monthLabel)) {
+            // Title may be "CVE Remediation: <repo>" or "CNX-XXXXX: CVE Remediation: <repo>"
+            // Extract repo name from the end of the title after the last "CVE Remediation: " token
+            const match = issue.title.match(/CVE Remediation:\s*(.+)$/);
+            const repoName = match?.[1]?.trim();
+            if (repoName) {
+              openIssuesByRepo.set(repoName, { id: issue.id, title: issue.title });
+            }
+          }
+        }
+      } catch {
+        // Non-fatal: fall through to always-create
+      }
+
+      for (const repo of repos) {
+        setProgress((p) => ({ ...p, current: repo.name }));
+
+        try {
+          // Title leads with Jira key when available so it's the primary visible identifier
+          const title = repo.jiraSubtaskKey
+            ? `${repo.jiraSubtaskKey}: CVE Remediation: ${repo.name}`
+            : `CVE Remediation: ${repo.name}`;
+
+          const existing = openIssuesByRepo.get(repo.name);
+
+          if (existing) {
+            // Reuse the existing open ticket — refresh title (may need Jira key added), description, assignee
+            const desc = buildCVEIssueDescription(repo);
+            await api.updateIssue(existing.id, {
+              title,
+              description: desc,
+              assignee_type: "agent",
+              assignee_id: agentId,
+              ...(repo.projectId ? { project_id: repo.projectId } : {}),
+              ...(repo.parentIssueId ? { parent_issue_id: repo.parentIssueId } : {}),
+            });
+            issueIds.push(existing.id);
+            reusedIds.push(existing.id);
+          } else {
+            // Create a fresh ticket at backlog with agent assigned — agent drives all transitions
+            const desc = buildCVEIssueDescription(repo);
+            const issue = await api.createIssue({
+              title,
+              description: desc,
+              status: "backlog",
+              assignee_type: "agent",
+              assignee_id: agentId,
+              ...(repo.projectId ? { project_id: repo.projectId } : {}),
+              ...(repo.parentIssueId ? { parent_issue_id: repo.parentIssueId } : {}),
+            });
+            issueIds.push(issue.id);
+          }
+        } catch (err) {
+          errors.push({ repo: repo.name, error: String(err) });
+        }
+
+        setProgress((p) => ({
+          ...p,
+          completed: p.completed + 1,
+          issueIds,
+          reusedIds,
+          errors,
+        }));
+      }
+
+      setProgress((p) => ({ ...p, current: null, issueIds, reusedIds, errors }));
+      setIsRunning(false);
+      qc.invalidateQueries({ queryKey: issueKeys.list(wsId) });
+
+      return { issueIds, reusedIds, errors };
+    },
+    [qc, wsId],
+  );
+
+  return { run, isRunning, progress };
+}
+
+// ---------------------------------------------------------------------------
 // Shared mutation variable types — used by both mutation hooks and
 // useMutationState consumers to keep the type assertion in sync.
 // ---------------------------------------------------------------------------

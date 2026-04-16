@@ -1,17 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { createSubmitExtension } from "./submit-shortcut";
 
-function getShortcuts(onSubmit: () => void) {
-  const extension = createSubmitExtension(onSubmit) as {
+function getShortcuts(onSubmit: () => boolean, submitOnEnter = true) {
+  const extension = createSubmitExtension(onSubmit, { submitOnEnter }) as {
     config?: { addKeyboardShortcuts?: () => Record<string, () => boolean> };
   };
   return extension.config?.addKeyboardShortcuts?.() ?? {};
 }
 
 describe("createSubmitExtension", () => {
-  it("submits on Enter", () => {
-    const onSubmit = vi.fn();
-    const shortcuts = getShortcuts(onSubmit);
+  it("submits on Enter when submitOnEnter=true", () => {
+    const onSubmit = vi.fn().mockReturnValue(true);
+    const shortcuts = getShortcuts(onSubmit, true);
     const onEnter = shortcuts.Enter;
 
     expect(onEnter).toBeTypeOf("function");
@@ -19,18 +19,16 @@ describe("createSubmitExtension", () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps Shift+Enter for newlines", () => {
-    const onSubmit = vi.fn();
-    const shortcuts = getShortcuts(onSubmit);
-    const onShiftEnter = shortcuts["Shift-Enter"];
+  it("does not register Enter when submitOnEnter=false", () => {
+    const onSubmit = vi.fn().mockReturnValue(true);
+    const shortcuts = getShortcuts(onSubmit, false);
 
-    expect(onShiftEnter).toBeTypeOf("function");
-    expect(onShiftEnter?.()).toBe(false);
+    expect(shortcuts.Enter).toBeUndefined();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("still submits on Mod+Enter", () => {
-    const onSubmit = vi.fn();
+    const onSubmit = vi.fn().mockReturnValue(true);
     const shortcuts = getShortcuts(onSubmit);
     const onModEnter = shortcuts["Mod-Enter"];
 

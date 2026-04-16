@@ -20,11 +20,11 @@ WHERE id = $1 AND workspace_id = $2;
 INSERT INTO autopilot (
     workspace_id, project_id, title, description, assignee_id,
     priority, status, execution_mode, issue_title_template,
-    created_by_type, created_by_id
+    created_by_type, created_by_id, retry_on_blocked
 ) VALUES (
     $1, sqlc.narg('project_id'), $2, sqlc.narg('description'), $3,
     $4, $5, $6, sqlc.narg('issue_title_template'),
-    $7, $8
+    $7, $8, $9
 ) RETURNING *;
 
 -- name: UpdateAutopilot :one
@@ -37,6 +37,7 @@ UPDATE autopilot SET
     status = COALESCE(sqlc.narg('status'), status),
     execution_mode = COALESCE(sqlc.narg('execution_mode'), execution_mode),
     issue_title_template = sqlc.narg('issue_title_template'),
+    retry_on_blocked = COALESCE(sqlc.narg('retry_on_blocked')::boolean, retry_on_blocked),
     updated_at = now()
 WHERE id = $1
 RETURNING *;
@@ -183,6 +184,22 @@ WHERE issue_id = $1
 -- =====================
 -- Scheduler Recovery
 -- =====================
+
+-- name: ListBlockedAutopilotIssues :many
+-- Returns blocked issues that originated from a retry_on_blocked autopilot
+-- and have no active run (so we don't double-dispatch).
+SELECT i.id AS issue_id, i.workspace_id, i.origin_id AS autopilot_id
+FROM issue i
+JOIN autopilot a ON a.id = i.origin_id
+WHERE i.status = 'blocked'
+  AND i.origin_type = 'autopilot'
+  AND a.retry_on_blocked = true
+  AND a.status = 'active'
+  AND NOT EXISTS (
+      SELECT 1 FROM autopilot_run r
+      WHERE r.issue_id = i.id
+        AND r.status IN ('issue_created', 'running')
+  );
 
 -- name: RecoverLostTriggers :many
 -- Finds schedule triggers that were claimed (next_run_at = NULL) but never

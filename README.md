@@ -183,6 +183,85 @@ make dev
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development workflow, worktree support, testing, and troubleshooting.
 
+## CVE Remediation Autopilots
+
+The `scripts/setup-cve-autopilots.sh` script provisions one Multica autopilot per repository in the CVE remediation pipeline. Each autopilot:
+
+- Assigns issues to the **Java Dev Agent**
+- Fires on the **1st of every month at 06:00 UTC** (`0 6 1 * *`)
+- Enables **retry-on-blocked** — if the agent gets stuck, it is automatically re-enqueued within 24 hours
+
+### Prerequisites
+
+| Variable | Description |
+|---|---|
+| `--api-url` | Backend URL (default `http://localhost:8090`) |
+| `--workspace` | Workspace ID |
+| `--token` | Bearer token (JWT or PAT) |
+| `--agent-id` | Java Dev Agent UUID |
+
+### Usage
+
+```bash
+./scripts/setup-cve-autopilots.sh \
+  --api-url   http://localhost:8090 \
+  --workspace <workspace-id> \
+  --token     <bearer-token> \
+  --agent-id  <java-dev-agent-id>
+```
+
+Re-running is safe — pass `--skip-existing` to skip repos that already have an autopilot:
+
+```bash
+./scripts/setup-cve-autopilots.sh \
+  --workspace <workspace-id> \
+  --token     <bearer-token> \
+  --agent-id  <java-dev-agent-id> \
+  --skip-existing
+```
+
+You can also set the four required values as environment variables instead of flags:
+
+```bash
+export MULTICA_API_URL=http://localhost:8090
+export MULTICA_WORKSPACE_ID=<workspace-id>
+export MULTICA_TOKEN=<bearer-token>
+export MULTICA_JAVA_AGENT_ID=<java-dev-agent-id>
+
+./scripts/setup-cve-autopilots.sh --skip-existing
+```
+
+### Linking existing issues
+
+If CVE issues were created before the autopilots existed, run this SQL to link them so the retry loop applies:
+
+```sql
+-- Link repo-level issues that exactly match an autopilot title
+UPDATE issue i
+SET origin_type = 'autopilot', origin_id = a.id
+FROM autopilot a
+WHERE a.title = i.title
+  AND i.title LIKE 'CVE Remediation: %'
+  AND i.origin_id IS NULL;
+
+-- Link issues with a CNX-XXXXXX prefix
+UPDATE issue i
+SET origin_type = 'autopilot', origin_id = a.id
+FROM autopilot a
+WHERE a.title = 'CVE Remediation: ' || REGEXP_REPLACE(i.title, '^CNX-[0-9]+: CVE Remediation: ', '')
+  AND i.title LIKE 'CNX%CVE%'
+  AND i.origin_id IS NULL;
+```
+
+### Retry-on-blocked behaviour
+
+The scheduler checks every 24 hours for blocked autopilot-origin issues and re-enqueues the agent. To enable this on autopilots created before the feature existed:
+
+```bash
+docker exec multica-postgres-1 psql -U multica -d multica \
+  -c "UPDATE autopilot SET retry_on_blocked = true WHERE status = 'active';"
+```
+
 ## Star History
 
 <a href="https://www.star-history.com/?repos=multica-ai%2Fmultica&type=date&legend=bottom-right">

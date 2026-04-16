@@ -67,6 +67,7 @@ import type {
 import { type Logger, noopLogger } from "../logger";
 import { createRequestId } from "../utils";
 
+
 export interface ApiClientOptions {
   logger?: Logger;
   onUnauthorized?: () => void;
@@ -559,6 +560,30 @@ export class ApiClient {
     return this.fetch(`/api/workspaces/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    });
+  }
+
+  // CVE repos
+  async getReposStatus(): Promise<{ name: string; present: boolean; path: string }[]> {
+    return this.fetch("/api/repos/status");
+  }
+
+  async cloneRepos(repos: string[]): Promise<{ cloned: string[]; failed: Record<string, string> }> {
+    return this.fetch("/api/repos/clone", {
+      method: "POST",
+      body: JSON.stringify({ repos }),
+    });
+  }
+
+  // Jira
+  async createCVEJiraTickets(repos: string[]): Promise<{
+    stories: Record<string, { key: string; url: string; existing: boolean }>;
+    repos: { repo: string; component: string; story_key: string; subtask_key: string; subtask_url: string; existing: boolean }[];
+    errors: Record<string, string>;
+  }> {
+    return this.fetch("/api/jira/cve-tickets", {
+      method: "POST",
+      body: JSON.stringify({ repos }),
     });
   }
 

@@ -295,6 +295,81 @@ func (s *AutopilotService) SyncRunFromTask(ctx context.Context, task db.AgentTas
 }
 
 
+// RetryBlockedAutopilotIssues finds all blocked issues that originated from a
+// retry_on_blocked autopilot, resets them to in_progress, and re-enqueues an
+// agent task. It is called on a daily cadence by the scheduler.
+func (s *AutopilotService) RetryBlockedAutopilotIssues(ctx context.Context) {
+	blocked, err := s.Queries.ListBlockedAutopilotIssues(ctx)
+	if err != nil {
+		slog.Error("retry_on_blocked: failed to list blocked autopilot issues", "error", err)
+		return
+	}
+	if len(blocked) == 0 {
+		return
+	}
+	slog.Info("retry_on_blocked: found blocked issues to retry", "count", len(blocked))
+
+	for _, row := range blocked {
+		issueID := row.IssueID
+		autopilotID := row.AutopilotID
+
+		// Load the full issue so we can enqueue a task.
+		issue, err := s.Queries.GetIssue(ctx, issueID)
+		if err != nil {
+			slog.Warn("retry_on_blocked: failed to load issue", "issue_id", util.UUIDToString(issueID), "error", err)
+			continue
+		}
+
+		// Load the autopilot to create a run.
+		ap, err := s.Queries.GetAutopilot(ctx, autopilotID)
+		if err != nil {
+			slog.Warn("retry_on_blocked: failed to load autopilot", "autopilot_id", util.UUIDToString(autopilotID), "error", err)
+			continue
+		}
+
+		// Create a new run linked to the existing issue.
+		run, err := s.Queries.CreateAutopilotRun(ctx, db.CreateAutopilotRunParams{
+			AutopilotID: ap.ID,
+			Source:      "retry_blocked",
+			Status:      "issue_created",
+		})
+		if err != nil {
+			slog.Warn("retry_on_blocked: failed to create run", "autopilot_id", util.UUIDToString(ap.ID), "error", err)
+			continue
+		}
+
+		// Link run to the existing issue.
+		if _, err := s.Queries.UpdateAutopilotRunIssueCreated(ctx, db.UpdateAutopilotRunIssueCreatedParams{
+			ID:      run.ID,
+			IssueID: issue.ID,
+		}); err != nil {
+			slog.Warn("retry_on_blocked: failed to link run to issue", "run_id", util.UUIDToString(run.ID), "error", err)
+			continue
+		}
+
+		// Reset the issue status back to in_progress so the agent can resume.
+		if _, err := s.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
+			ID:     issue.ID,
+			Status: "in_progress",
+		}); err != nil {
+			slog.Warn("retry_on_blocked: failed to reset issue status", "issue_id", util.UUIDToString(issue.ID), "error", err)
+			continue
+		}
+
+		// Enqueue the agent task.
+		if _, err := s.TaskSvc.EnqueueTaskForIssue(ctx, issue); err != nil {
+			slog.Warn("retry_on_blocked: failed to enqueue task", "issue_id", util.UUIDToString(issue.ID), "error", err)
+			continue
+		}
+
+		slog.Info("retry_on_blocked: re-enqueued blocked issue",
+			"issue_id", util.UUIDToString(issue.ID),
+			"autopilot_id", util.UUIDToString(ap.ID),
+			"run_id", util.UUIDToString(run.ID),
+		)
+	}
+}
+
 func (s *AutopilotService) failRun(ctx context.Context, runID pgtype.UUID, reason string) {
 	if _, err := s.Queries.UpdateAutopilotRunFailed(ctx, db.UpdateAutopilotRunFailedParams{
 		ID:            runID,
