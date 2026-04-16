@@ -1,0 +1,97 @@
+CLAUDE.md
+  2807e65e1fdd0abd 309-388
+server/cmd/server/autopilot_scheduler.go
+  9a3de3ec11db133a 15,18,23-25,29-30,38-39
+server/internal/handler/autopilot.go
+  9a3de3ec11db133a 40,93,150,162,297,346,378-380
+packages/core/api/client.ts
+  2807e65e1fdd0abd 566-589
+  696cedc7cc240ca9 70
+packages/core/issues/mutations.ts
+  2807e65e1fdd0abd 15-210,212-287
+  9a3de3ec11db133a 211
+server/cmd/server/router.go
+  2807e65e1fdd0abd 321-334
+server/internal/service/autopilot.go
+  9a3de3ec11db133a 298-372
+server/pkg/agent/copilot.go
+  696cedc7cc240ca9 49
+server/pkg/db/generated/autopilot.sql.go
+  9a3de3ec11db133a 105,109-110,125,141,160,343,366,372,400,579,618,708,711,715-724,738,757,951-997
+server/migrations/044_autopilot_retry_on_blocked.down.sql
+  9a3de3ec11db133a 1
+server/internal/handler/jira.go
+  9a3de3ec11db133a 128,130-131,165,167-168
+server/pkg/db/generated/models.go
+  9a3de3ec11db133a 117
+scripts/setup-cve-autopilots.sh
+  9a3de3ec11db133a 1-236
+server/internal/daemon/config.go
+  2807e65e1fdd0abd 15
+server/internal/daemon/daemon.go
+  2807e65e1fdd0abd 761-767,783,801,803,807
+packages/core/types/autopilot.ts
+  9a3de3ec11db133a 27,69,81
+packages/views/editor/extensions/submit-shortcut.test.ts
+  9a3de3ec11db133a 4-5,12-14,22-24,26,31
+README.md
+  9a3de3ec11db133a 186-264
+server/migrations/044_autopilot_retry_on_blocked.up.sql
+  9a3de3ec11db133a 1-2
+docker-compose.selfhost.yml
+  2807e65e1fdd0abd 41-42,61-62
+packages/views/issues/components/issues-header.tsx
+  2807e65e1fdd0abd 15,66,388,448-465
+server/pkg/db/queries/autopilot.sql
+  9a3de3ec11db133a 23,27,40,188-203
+Dockerfile
+  2807e65e1fdd0abd 25
+packages/views/autopilots/components/autopilot-detail-page.tsx
+  9a3de3ec11db133a 149,158,170,184,280-295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "7d5aea0d7b255fdaaea9a13e025c928e72a3a3be",
+  "prompts": {
+    "2807e65e1fdd0abd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6a0dcd20-bb90-44f8-9371-863a75e4f6c8",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": null,
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 2524,
+      "overriden_lines": 0
+    },
+    "696cedc7cc240ca9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3ff89148-1d49-4def-a730-fd604e0b50a3",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": null,
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 2,
+      "overriden_lines": 3
+    },
+    "9a3de3ec11db133a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9511f762-5de5-4a93-be2b-0782e6bb2c18",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 1706,
+      "total_deletions": 44,
+      "accepted_lines": 862,
+      "overriden_lines": 0
+    }
+  }
+}
