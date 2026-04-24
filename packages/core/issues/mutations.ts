@@ -1,28 +1,315 @@
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import {
-  issueKeys,
-  ISSUE_PAGE_SIZE,
-  type MyIssuesFilter,
-} from "./queries";
-import {
-  addIssueToBuckets,
-  findIssueLocation,
-  getBucket,
-  patchIssueInBuckets,
-  removeIssueFromBuckets,
-  setBucket,
-} from "./cache-helpers";
+import { issueKeys, CLOSED_PAGE_SIZE, type MyIssuesFilter } from "./queries";
 import { useWorkspaceId } from "../hooks";
-import { useRecentIssuesStore } from "./stores";
-import type { Issue, IssueReaction, IssueStatus } from "../types";
+import type { Issue, IssueReaction } from "../types";
 import type {
   CreateIssueRequest,
   UpdateIssueRequest,
-  ListIssuesCache,
+  ListIssuesResponse,
 } from "../types";
 import type { TimelineEntry, IssueSubscriber, Reaction } from "../types";
+
+// ---------------------------------------------------------------------------
+// CVE Remediation workflow
+// ---------------------------------------------------------------------------
+
+export interface CVERemediationRepo {
+  name: string;
+  /** Path inside the dev container (e.g. /home/dev/repo/ws/<repo>) — for docker exec commands */
+  path: string;
+  /** Path on the host (e.g. /root/dev-env/ws/<repo>) — for git operations run directly */
+  hostPath: string;
+  /** New branch the agent will create for the fix */
+  branch: string;
+  /** Branch the agent should sync against and target with the PR (e.g. devel, release/ii_1.118.0) */
+  baseBranch: string;
+  jiraSubtaskKey?: string;
+  jiraStoryKey?: string;
+  projectId?: string;
+  parentIssueId?: string;
+}
+
+export interface CVERemediationProgress {
+  total: number;
+  completed: number;
+  current: string | null;
+  issueIds: string[];
+  reusedIds: string[];
+  errors: { repo: string; error: string }[];
+}
+
+export function buildCVEIssueDescription(repo: CVERemediationRepo): string {
+  return [
+    `CVE scan and remediation for \`${repo.name}\`.`,
+    ``,
+    `**Repo path (container):** \`${repo.path}\``,
+    `**Repo path (host):** \`${repo.hostPath}\``,
+    `**Branch:** \`${repo.branch}\``,
+    ...(repo.jiraSubtaskKey ? [
+      `**Jira:** [${repo.jiraSubtaskKey}](https://jira.arubanetworks.com/browse/${repo.jiraSubtaskKey})` +
+      (repo.jiraStoryKey ? ` · Story: [${repo.jiraStoryKey}](https://jira.arubanetworks.com/browse/${repo.jiraStoryKey})` : ""),
+    ] : []),
+    ``,
+    `## State transitions — you own these`,
+    ``,
+    `| When | Multica | Jira (${repo.jiraSubtaskKey ?? "sub-task key"}) |`,
+    `|------|---------|------|`,
+    `| You start reading this task | \`todo\` | — |`,
+    `| You begin the trivy scan | \`in_progress\` | transition → **Assigned** |`,
+    `| Trivy scan is clean (0 HIGH 0 CRITICAL) — skip PR | \`done\` | transition → **Resolved** |`,
+    `| Before raising PR (CVEs found) | — | transition → **In Review** |`,
+    `| PR raised + ctl passed | \`done\` | — |`,
+    `| User comments on this issue | back to \`todo\` → \`in_progress\` | — |`,
+    ``,
+    `## Step 1 — Read project build instructions`,
+    ``,
+    `Check if \`${repo.path}/AGENTS.md\` exists:`,
+    `- **If it exists** — follow its instructions exactly for compile, test, and lint commands.`,
+    `- **If it does not exist** — use the standard \`tools/\` scripts (all run inside the dev container):`,
+    `\`\`\``,
+    `docker exec -w ${repo.path} dev-env-dev-1 bash tools/compile.sh`,
+    `docker exec -w ${repo.path} dev-env-dev-1 bash tools/unit-tests.sh`,
+    `docker exec -w ${repo.path} dev-env-dev-1 bash tools/lint-source-code.sh`,
+    `docker exec -w ${repo.path} dev-env-dev-1 bash tools/lint-k8s-objects.sh`,
+    `\`\`\``,
+    ``,
+    `## Step 2 — Sync to latest \`${repo.baseBranch}\` and prepare branch`,
+    ``,
+    `> **Important:** The repo is already cloned at \`${repo.hostPath}\` on the host. **Do NOT use \`multica repo checkout\`** — just use the path directly.`,
+    ``,
+    `Move this Multica issue to \`in_progress\` and transition the Jira sub-task to **Assigned**:`,
+    `\`\`\``,
+    ...(repo.jiraSubtaskKey
+      ? [`python3 /root/.claude/skills/jira-cli/scripts/jira.py transition ${repo.jiraSubtaskKey} "Assign"`]
+      : [`# python3 /root/.claude/skills/jira-cli/scripts/jira.py transition <JIRA-KEY> "Assign"`]),
+    `\`\`\``,
+    ``,
+    `Sync to latest \`${repo.baseBranch}\` — run these **every time** (on the host):`,
+    `\`\`\``,
+    `cd ${repo.hostPath}`,
+    `git checkout ${repo.baseBranch}`,
+    `git pull origin ${repo.baseBranch}`,
+    `git checkout -B ${repo.branch}`,
+    `\`\`\``,
+    `\`git checkout -B\` force-recreates the branch from the freshly pulled \`${repo.baseBranch}\`, discarding any previous scan attempt on that branch.`,
+    ``,
+    `## Step 3 — Scan and fix CVEs`,
+    ``,
+    `Run the **trivy-cve-remediation** skill. It will scan the built JARs and upgrade vulnerable dependency versions in \`pom.xml\`.`,
+    ``,
+    `**After trivy completes, take exactly one of the two branches below. Do not continue to Steps 4–5 if the scan is already clean.**`,
+    ``,
+    `### Branch A — Trivy is already clean (0 HIGH, 0 CRITICAL)`,
+    ``,
+    `**STOP. Do not run ctl. Do not raise a PR. Go directly to Step 6 (already-clean path).**`,
+    ``,
+    `### Branch B — Trivy found CVEs (HIGH > 0 or CRITICAL > 0)`,
+    ``,
+    `Continue to Steps 4–5 to fix, gate, and raise a PR.`,
+    ``,
+    `## Step 4 — Quality gate (ctl) [Branch B only]`,
+    ``,
+    `Run the **ctl** skill to compile, test, and lint the repo using the build commands from Step 1.`,
+    ``,
+    `**If ctl fails:**`,
+    `- Read the error output carefully.`,
+    `- If a version bump broke an API: find the nearest compatible fixed version and update \`pom.xml\`.`,
+    `- If tests fail: fix the code or the test to match the new dependency behaviour.`,
+    `- Re-run ctl. Repeat until it passes. Do not move to \`in_review\` until ctl is green.`,
+    ``,
+    `## Step 5 — Raise PR [Branch B only]`,
+    ``,
+    `Once ctl is green, first transition Jira to **In Review**, then push and create the PR:`,
+    `\`\`\``,
+    ...(repo.jiraSubtaskKey
+      ? [`python3 /root/.claude/skills/jira-cli/scripts/jira.py transition ${repo.jiraSubtaskKey} "In Review"`]
+      : [`# python3 /root/.claude/skills/jira-cli/scripts/jira.py transition <JIRA-KEY> "In Review"`]),
+    `git push origin ${repo.branch} --force-with-lease`,
+    ...(repo.jiraSubtaskKey
+      ? [
+          `pr-cli create --title "${repo.jiraSubtaskKey}: chore: CVE remediation ${repo.name}" --description "Jira: ${repo.jiraSubtaskKey}\\n\\nAutomated CVE remediation via Trivy scan. ctl quality gate passed." --target ${repo.baseBranch}`,
+        ]
+      : [
+          `pr-cli create --title "chore: CVE remediation ${repo.name}" --description "Automated CVE remediation via Trivy scan. ctl quality gate passed." --target ${repo.baseBranch}`,
+        ]),
+    `\`\`\``,
+    `(Use \`--force-with-lease\` because the branch is force-recreated from \`${repo.baseBranch}\` each run.)`,
+    ``,
+    `Then go directly to Step 6 (PR-raised path) — do not stop at \`in_review\`.`,
+    ``,
+    `## Step 6 — Done`,
+    ``,
+    `**PR-raised path (Branch B)** — CVEs fixed, PR open. Move Multica issue to \`done\` and notify Slack:`,
+    `\`\`\``,
+    `curl -s -X POST http://localhost:8090/api/slack/cve-done \\`,
+    `  -H "Content-Type: application/json" \\`,
+    `  -H "X-Workspace-ID: $MULTICA_WORKSPACE_ID" \\`,
+    `  -H "Authorization: Bearer $MULTICA_TOKEN" \\`,
+    `  -d '{`,
+    `    "repo": "${repo.name}",`,
+    ...(repo.jiraSubtaskKey
+      ? [
+          `    "jira_key": "${repo.jiraSubtaskKey}",`,
+          `    "jira_url": "https://jira.arubanetworks.com/browse/${repo.jiraSubtaskKey}",`,
+        ]
+      : []),
+    `    "pr_title": "<PR title from pr-cli output>",`,
+    `    "pr_url": "<PR URL from pr-cli output>",`,
+    `    "cve_high_before": <HIGH count from first trivy scan>,`,
+    `    "cve_critical_before": <CRITICAL count from first trivy scan>,`,
+    `    "cve_high_after": 0,`,
+    `    "cve_critical_after": 0`,
+    `  }'`,
+    `\`\`\``,
+    ``,
+    `**Already-clean path (Branch A)** — trivy was 0→0, no PR raised. Transition Jira to resolved, move Multica issue to \`done\`, notify Slack:`,
+    `\`\`\``,
+    ...(repo.jiraSubtaskKey
+      ? [`python3 /root/.claude/skills/jira-cli/scripts/jira.py transition ${repo.jiraSubtaskKey} "Resolve Issue"`]
+      : [`# python3 /root/.claude/skills/jira-cli/scripts/jira.py transition <JIRA-KEY> "Resolve Issue"`]),
+    `curl -s -X POST http://localhost:8090/api/slack/cve-done \\`,
+    `  -H "Content-Type: application/json" \\`,
+    `  -H "X-Workspace-ID: $MULTICA_WORKSPACE_ID" \\`,
+    `  -H "Authorization: Bearer $MULTICA_TOKEN" \\`,
+    `  -d '{`,
+    `    "repo": "${repo.name}",`,
+    ...(repo.jiraSubtaskKey
+      ? [
+          `    "jira_key": "${repo.jiraSubtaskKey}",`,
+          `    "jira_url": "https://jira.arubanetworks.com/browse/${repo.jiraSubtaskKey}",`,
+        ]
+      : []),
+    `    "pr_title": "Already clean — no PR needed",`,
+    `    "pr_url": "",`,
+    `    "cve_high_before": 0,`,
+    `    "cve_critical_before": 0,`,
+    `    "cve_high_after": 0,`,
+    `    "cve_critical_after": 0`,
+    `  }'`,
+    `\`\`\``,
+    ``,
+    `## If the user comments`,
+    ``,
+    `When you receive a new comment on this issue at any point:`,
+    `1. Move issue to \`todo\` to acknowledge.`,
+    `2. Move to \`in_progress\` when you start addressing it.`,
+    `3. Read the comment, apply any changes requested, re-run ctl, update the PR.`,
+    `4. Move back to \`in_review\` (or \`done\` if fully resolved).`,
+  ].join("\n");
+}
+
+export function useCVERemediation() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  const [progress, setProgress] = useState<CVERemediationProgress>({
+    total: 0,
+    completed: 0,
+    current: null,
+    issueIds: [],
+    reusedIds: [],
+    errors: [],
+  });
+  const [isRunning, setIsRunning] = useState(false);
+
+  const run = useCallback(
+    async (repos: CVERemediationRepo[], agentId: string) => {
+      setIsRunning(true);
+      setProgress({ total: repos.length, completed: 0, current: null, issueIds: [], reusedIds: [], errors: [] });
+
+      const issueIds: string[] = [];
+      const reusedIds: string[] = [];
+      const errors: { repo: string; error: string }[] = [];
+
+      // Fetch all open CVE remediation issues once — avoids N individual searches
+      const monthLabel = new Date().toISOString().slice(0, 7); // "2026-04"
+      // Key: repo name (without Jira prefix) → { id, title }
+      let openIssuesByRepo = new Map<string, { id: string; title: string }>();
+      try {
+        const searchResp = await api.searchIssues({
+          q: `CVE Remediation`,
+          limit: 500,
+          include_closed: false,
+        });
+        for (const issue of searchResp.issues) {
+          if (issue.created_at.startsWith(monthLabel)) {
+            // Title may be "CVE Remediation: <repo>" or "CNX-XXXXX: CVE Remediation: <repo>"
+            // Extract repo name from the end of the title after the last "CVE Remediation: " token
+            const match = issue.title.match(/CVE Remediation:\s*(.+)$/);
+            const repoName = match?.[1]?.trim();
+            if (repoName) {
+              openIssuesByRepo.set(repoName, { id: issue.id, title: issue.title });
+            }
+          }
+        }
+      } catch {
+        // Non-fatal: fall through to always-create
+      }
+
+      for (const repo of repos) {
+        setProgress((p) => ({ ...p, current: repo.name }));
+
+        try {
+          // Title leads with Jira key when available so it's the primary visible identifier
+          const title = repo.jiraSubtaskKey
+            ? `${repo.jiraSubtaskKey}: CVE Remediation: ${repo.name}`
+            : `CVE Remediation: ${repo.name}`;
+
+          const existing = openIssuesByRepo.get(repo.name);
+
+          if (existing) {
+            // Reuse the existing open ticket — refresh title (may need Jira key added), description, assignee
+            const desc = buildCVEIssueDescription(repo);
+            await api.updateIssue(existing.id, {
+              title,
+              description: desc,
+              assignee_type: "agent",
+              assignee_id: agentId,
+              ...(repo.projectId ? { project_id: repo.projectId } : {}),
+              ...(repo.parentIssueId ? { parent_issue_id: repo.parentIssueId } : {}),
+            });
+            issueIds.push(existing.id);
+            reusedIds.push(existing.id);
+          } else {
+            // Create at in_progress so the dispatcher enqueues the agent task immediately.
+            // backlog is a "parking lot" status that intentionally does not auto-trigger agents.
+            const desc = buildCVEIssueDescription(repo);
+            const issue = await api.createIssue({
+              title,
+              description: desc,
+              status: "in_progress",
+              assignee_type: "agent",
+              assignee_id: agentId,
+              ...(repo.projectId ? { project_id: repo.projectId } : {}),
+              ...(repo.parentIssueId ? { parent_issue_id: repo.parentIssueId } : {}),
+            });
+            issueIds.push(issue.id);
+          }
+        } catch (err) {
+          errors.push({ repo: repo.name, error: String(err) });
+        }
+
+        setProgress((p) => ({
+          ...p,
+          completed: p.completed + 1,
+          issueIds,
+          reusedIds,
+          errors,
+        }));
+      }
+
+      setProgress((p) => ({ ...p, current: null, issueIds, reusedIds, errors }));
+      setIsRunning(false);
+      qc.invalidateQueries({ queryKey: issueKeys.list(wsId) });
+
+      return { issueIds, reusedIds, errors };
+    },
+    [qc, wsId],
+  );
+
+  return { run, isRunning, progress };
+}
 
 // ---------------------------------------------------------------------------
 // Shared mutation variable types — used by both mutation hooks and
@@ -41,18 +328,10 @@ export type ToggleIssueReactionVars = {
 };
 
 // ---------------------------------------------------------------------------
-// Per-status pagination
+// Done issue pagination
 // ---------------------------------------------------------------------------
 
-/**
- * Paginate one status column into the cache. Works for both the workspace
- * issue list and per-scope My Issues lists (pass `myIssues` to target the
- * latter).
- */
-export function useLoadMoreByStatus(
-  status: IssueStatus,
-  myIssues?: { scope: string; filter: MyIssuesFilter },
-) {
+export function useLoadMoreDoneIssues(myIssues?: { scope: string; filter: MyIssuesFilter }) {
   const qc = useQueryClient();
   const wsId = useWorkspaceId();
   const [isLoading, setIsLoading] = useState(false);
@@ -60,38 +339,39 @@ export function useLoadMoreByStatus(
   const queryKey = myIssues
     ? issueKeys.myList(wsId, myIssues.scope, myIssues.filter)
     : issueKeys.list(wsId);
-  const cache = qc.getQueryData<ListIssuesCache>(queryKey);
-  const bucket = cache?.byStatus[status];
-  const loaded = bucket?.issues.length ?? 0;
-  const total = bucket?.total ?? 0;
-  const hasMore = loaded < total;
+  const cache = qc.getQueryData<ListIssuesResponse>(queryKey);
+  const doneLoaded = cache
+    ? cache.issues.filter((i) => i.status === "done").length
+    : 0;
+  const doneTotal = cache?.doneTotal ?? 0;
+  const hasMore = doneLoaded < doneTotal;
 
   const loadMore = useCallback(async () => {
     if (isLoading || !hasMore) return;
     setIsLoading(true);
     try {
       const res = await api.listIssues({
-        status,
-        limit: ISSUE_PAGE_SIZE,
-        offset: loaded,
+        status: "done",
+        limit: CLOSED_PAGE_SIZE,
+        offset: doneLoaded,
         ...myIssues?.filter,
       });
-      qc.setQueryData<ListIssuesCache>(queryKey, (old) => {
+      qc.setQueryData<ListIssuesResponse>(queryKey, (old) => {
         if (!old) return old;
-        const prev = getBucket(old, status);
-        const existingIds = new Set(prev.issues.map((i) => i.id));
-        const appended = res.issues.filter((i) => !existingIds.has(i.id));
-        return setBucket(old, status, {
-          issues: [...prev.issues, ...appended],
-          total: res.total,
-        });
+        const existingIds = new Set(old.issues.map((i) => i.id));
+        const newIssues = res.issues.filter((i) => !existingIds.has(i.id));
+        return {
+          ...old,
+          issues: [...old.issues, ...newIssues],
+          doneTotal: res.total,
+        };
       });
     } finally {
       setIsLoading(false);
     }
-  }, [qc, queryKey, status, loaded, hasMore, isLoading, myIssues?.filter]);
+  }, [qc, queryKey, doneLoaded, hasMore, isLoading, myIssues?.filter]);
 
-  return { loadMore, hasMore, isLoading, total };
+  return { loadMore, hasMore, isLoading, doneTotal };
 }
 
 // ---------------------------------------------------------------------------
@@ -104,12 +384,16 @@ export function useCreateIssue() {
   return useMutation({
     mutationFn: (data: CreateIssueRequest) => api.createIssue(data),
     onSuccess: (newIssue) => {
-      qc.setQueryData<ListIssuesCache>(issueKeys.list(wsId), (old) =>
-        old ? addIssueToBuckets(old, newIssue) : old,
+      qc.setQueryData<ListIssuesResponse>(issueKeys.list(wsId), (old) =>
+        old && !old.issues.some((i) => i.id === newIssue.id)
+          ? {
+              ...old,
+              issues: [...old.issues, newIssue],
+              total: old.total + 1,
+              doneTotal: (old.doneTotal ?? 0) + (newIssue.status === "done" ? 1 : 0),
+            }
+          : old,
       );
-      // Surface the just-created issue in cmd+k's Recent list without
-      // requiring the user to open it first.
-      useRecentIssuesStore.getState().recordVisit(newIssue.id);
       // Invalidate parent's children query so sub-issues list updates immediately
       if (newIssue.parent_issue_id) {
         qc.invalidateQueries({ queryKey: issueKeys.children(wsId, newIssue.parent_issue_id) });
@@ -134,7 +418,7 @@ export function useUpdateIssue() {
       // yield to the event loop, letting @dnd-kit reset its visual state
       // before the optimistic update lands.
       qc.cancelQueries({ queryKey: issueKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListIssuesCache>(issueKeys.list(wsId));
+      const prevList = qc.getQueryData<ListIssuesResponse>(issueKeys.list(wsId));
       const prevDetail = qc.getQueryData<Issue>(issueKeys.detail(wsId, id));
 
       // Resolve parent_issue_id from the freshest source so we can keep the
@@ -142,14 +426,21 @@ export function useUpdateIssue() {
       // sub-issues list).
       const parentId =
         prevDetail?.parent_issue_id ??
-        (prevList ? findIssueLocation(prevList, id)?.issue.parent_issue_id : null) ??
+        prevList?.issues.find((i) => i.id === id)?.parent_issue_id ??
         null;
       const prevChildren = parentId
         ? qc.getQueryData<Issue[]>(issueKeys.children(wsId, parentId))
         : undefined;
 
-      qc.setQueryData<ListIssuesCache>(issueKeys.list(wsId), (old) =>
-        old ? patchIssueInBuckets(old, id, data) : old,
+      qc.setQueryData<ListIssuesResponse>(issueKeys.list(wsId), (old) =>
+        old
+          ? {
+              ...old,
+              issues: old.issues.map((i) =>
+                i.id === id ? { ...i, ...data } : i,
+              ),
+            }
+          : old,
       );
       qc.setQueryData<Issue>(issueKeys.detail(wsId, id), (old) =>
         old ? { ...old, ...data } : old,
@@ -203,11 +494,18 @@ export function useDeleteIssue() {
     mutationFn: (id: string) => api.deleteIssue(id),
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: issueKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListIssuesCache>(issueKeys.list(wsId));
-      const deleted = prevList ? findIssueLocation(prevList, id)?.issue : undefined;
-      qc.setQueryData<ListIssuesCache>(issueKeys.list(wsId), (old) =>
-        old ? removeIssueFromBuckets(old, id) : old,
-      );
+      const prevList = qc.getQueryData<ListIssuesResponse>(issueKeys.list(wsId));
+      const deleted = prevList?.issues.find((i) => i.id === id);
+      qc.setQueryData<ListIssuesResponse>(issueKeys.list(wsId), (old) => {
+        if (!old) return old;
+        const d = old.issues.find((i) => i.id === id);
+        return {
+          ...old,
+          issues: old.issues.filter((i) => i.id !== id),
+          total: old.total - 1,
+          doneTotal: (old.doneTotal ?? 0) - (d?.status === "done" ? 1 : 0),
+        };
+      });
       qc.removeQueries({ queryKey: issueKeys.detail(wsId, id) });
       return { prevList, parentIssueId: deleted?.parent_issue_id };
     },
@@ -237,13 +535,17 @@ export function useBatchUpdateIssues() {
     }) => api.batchUpdateIssues(ids, updates),
     onMutate: async ({ ids, updates }) => {
       await qc.cancelQueries({ queryKey: issueKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListIssuesCache>(issueKeys.list(wsId));
-      qc.setQueryData<ListIssuesCache>(issueKeys.list(wsId), (old) => {
-        if (!old) return old;
-        let next = old;
-        for (const id of ids) next = patchIssueInBuckets(next, id, updates);
-        return next;
-      });
+      const prevList = qc.getQueryData<ListIssuesResponse>(issueKeys.list(wsId));
+      qc.setQueryData<ListIssuesResponse>(issueKeys.list(wsId), (old) =>
+        old
+          ? {
+              ...old,
+              issues: old.issues.map((i) =>
+                ids.includes(i.id) ? { ...i, ...updates } : i,
+              ),
+            }
+          : old,
+      );
       return { prevList };
     },
     onError: (_err, _vars, ctx) => {
@@ -262,19 +564,24 @@ export function useBatchDeleteIssues() {
     mutationFn: (ids: string[]) => api.batchDeleteIssues(ids),
     onMutate: async (ids) => {
       await qc.cancelQueries({ queryKey: issueKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListIssuesCache>(issueKeys.list(wsId));
-      const parentIssueIds = new Set<string>();
-      if (prevList) {
-        for (const id of ids) {
-          const loc = findIssueLocation(prevList, id);
-          if (loc?.issue.parent_issue_id) parentIssueIds.add(loc.issue.parent_issue_id);
-        }
-      }
-      qc.setQueryData<ListIssuesCache>(issueKeys.list(wsId), (old) => {
+      const prevList = qc.getQueryData<ListIssuesResponse>(issueKeys.list(wsId));
+      const idSet = new Set(ids);
+      const parentIssueIds = new Set(
+        prevList?.issues
+          .filter((i) => idSet.has(i.id) && i.parent_issue_id)
+          .map((i) => i.parent_issue_id!) ?? [],
+      );
+      qc.setQueryData<ListIssuesResponse>(issueKeys.list(wsId), (old) => {
         if (!old) return old;
-        let next = old;
-        for (const id of ids) next = removeIssueFromBuckets(next, id);
-        return next;
+        const doneDeleted = old.issues.filter(
+          (i) => idSet.has(i.id) && i.status === "done",
+        ).length;
+        return {
+          ...old,
+          issues: old.issues.filter((i) => !idSet.has(i.id)),
+          total: old.total - ids.length,
+          doneTotal: (old.doneTotal ?? 0) - doneDeleted,
+        };
       });
       return { prevList, parentIssueIds };
     },
