@@ -1,0 +1,61 @@
+scripts/iotops-skills/multica-cli/agent-and-skill-ops.md
+  94bba8d22216b938 1-61
+scripts/iotops-skills/iotops-fix-apply/fix-prompt.md
+  94bba8d22216b938 1-43
+scripts/iotops-skills/iotops-scout/SKILL.md
+  94bba8d22216b938 1-196
+scripts/iotops-skills/multica-cli/authentication.md
+  94bba8d22216b938 1-65
+scripts/iotops-skills/CREATE_AUTOPILOT_IN_UI.md
+  94bba8d22216b938 1-99
+scripts/iotops-skills/multica-cli/SKILL.md
+  94bba8d22216b938 1-104
+scripts/iotops-skills/iotops-scout/humio-lsql.md
+  94bba8d22216b938 1-56
+docker-compose.selfhost.yml
+  94bba8d22216b938 31-33,41-43,62-63,66-72
+scripts/iotops-skills/iotops-fix-apply/SKILL.md
+  94bba8d22216b938 1-185
+scripts/iotops-skills/iotops-verify-pr-slack/pr-template.md
+  94bba8d22216b938 1-87
+CLAUDE.md
+  94bba8d22216b938 164,309-399
+scripts/setup-iotops-error-agents.sh
+  94bba8d22216b938 1-335
+packages/core/issues/mutations.ts
+  94bba8d22216b938 4,6,10,14-313,331,334,342-347,354-356,359,361-367,372,374,387-395,421,429,435-443,497-508,538-548,567-574,576-584
+scripts/iotops-skills/iotops-scout/repos.json
+  94bba8d22216b938 1-50
+scripts/iotops-skills/iotops-fix-apply/rca-prompt.md
+  94bba8d22216b938 1-57
+scripts/iotops-skills/iotops-verify-pr-slack/SKILL.md
+  94bba8d22216b938 1-109
+scripts/iotops-skills/multica-cli/issue-ops.md
+  94bba8d22216b938 1-136
+scripts/iotops-skills/iotops-verify-pr-slack/jira-fields.md
+  94bba8d22216b938 1-114
+scripts/iotops-skills/iotops-verify-pr-slack/slack-templates.md
+  94bba8d22216b938 1-105
+scripts/iotops-skills/iotops-error-pipeline-debug/SKILL.md
+  94bba8d22216b938 1-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "41c54d97f468db5fc840f30ca2555586ddee569e",
+  "prompts": {
+    "94bba8d22216b938": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ae28102-ba99-4d8c-a3b2-7389f1b3d313",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 500,
+      "total_deletions": 132,
+      "accepted_lines": 2656,
+      "overriden_lines": 0
+    }
+  }
+}
