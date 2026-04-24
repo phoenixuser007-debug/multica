@@ -21,7 +21,6 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-multica} -d ${POSTGRES_DB:-multica}"]
       interval: 5s
@@ -29,7 +28,9 @@ services:
       retries: 5
 
   backend:
-    image: ${MULTICA_BACKEND_IMAGE:-ghcr.io/multica-ai/multica-backend}:${MULTICA_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,6 +38,9 @@ services:
       - "${PORT:-8080}:8080"
     volumes:
       - backend_uploads:/app/data/uploads
+      - /root/dev-env/ws:/root/dev-env/ws
+      - /root/central:/root/central
+      - /root/.ssh:/root/.ssh:ro
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-multica}:${POSTGRES_PASSWORD:-multica}@postgres:5432/${POSTGRES_DB:-multica}?sslmode=disable
       PORT: "8080"
@@ -54,19 +58,24 @@ services:
       CLOUDFRONT_KEY_PAIR_ID: ${CLOUDFRONT_KEY_PAIR_ID:-}
       CLOUDFRONT_PRIVATE_KEY: ${CLOUDFRONT_PRIVATE_KEY:-}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
-      APP_ENV: ${APP_ENV:-production}
       MULTICA_APP_URL: ${MULTICA_APP_URL:-http://localhost:3000}
-    restart: unless-stopped
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      JIRA_TOKEN: ${JIRA_TOKEN:-}
 
   frontend:
-    image: ${MULTICA_WEB_IMAGE:-ghcr.io/multica-ai/multica-web}:${MULTICA_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        REMOTE_API_URL: http://backend:8080
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
     depends_on:
       - backend
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
       HOSTNAME: "0.0.0.0"
-    restart: unless-stopped
 
 volumes:
   pgdata:

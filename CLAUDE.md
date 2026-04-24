@@ -106,7 +106,6 @@ pnpm ui:add badge                # Adds component to packages/ui/components/ui/
 # Infrastructure
 make db-up            # Start shared PostgreSQL (pgvector/pg17 image)
 make db-down          # Stop shared PostgreSQL
-make db-reset         # Drop + recreate current env's DB, then re-run migrations (local only; stop backend first)
 ```
 
 ### CI Requirements
@@ -134,7 +133,6 @@ make start-worktree     # Start using .env.worktree
 - Unless the user explicitly asks for backwards compatibility, do **not** add compatibility layers, fallback paths, dual-write logic, legacy adapters, or temporary shims.
 - If a flow or API is being replaced and the product is not yet live, prefer removing the old path instead of preserving both old and new behavior.
 - Avoid broad refactors unless required by the task.
-- New global (pre-workspace) routes MUST use a single word (`/login`, `/inbox`) or a `/{noun}/{verb}` pair (`/workspaces/new`). NEVER add hyphenated word-group root routes (`/new-workspace`, `/create-team`) — they collide with common user workspace names and force endless reserved-slug audits. Reserving the noun (`workspaces`) automatically protects the entire `/workspaces/*` subtree.
 
 ### Package Boundary Rules
 
@@ -163,7 +161,7 @@ When the two apps need different behavior for the same concept (e.g., different 
 When adding a new page or feature:
 
 1. **New page component** → add to `packages/views/<domain>/`. Never import from `next/*` or `react-router-dom`.
-2. **Wire it in both apps** → add a route in `apps/web/app/` (Next.js page file) AND in the desktop router. **Exception**: pre-workspace transition flows (create workspace, accept invite) are NOT routes on desktop — they're `WindowOverlay` state. See *Desktop-specific Rules → Route categories*.
+2. **Wire it in both apps** → add a route in `apps/web/app/` (Next.js page file) AND in the desktop router.
 3. **Navigation** → use `useNavigation().push()` or `<AppLink>`. Never use framework-specific link/router APIs in shared code.
 4. **Shared guards/providers** → use `DashboardGuard` from `packages/views/layout/`. Don't create separate guard logic per app.
 5. **Platform-specific UI** → if a feature is web-only or desktop-only, keep it in the respective app. Use props slots (`extra`, `topSlot`) on shared layout components to inject platform-specific UI.
@@ -176,43 +174,6 @@ Both apps share the same CSS foundation from `packages/ui/styles/`.
 - **Design tokens** → use semantic tokens (`bg-background`, `text-muted-foreground`). Never use hardcoded Tailwind colors (`text-red-500`, `bg-gray-100`).
 - **Shared styles** → `packages/ui/styles/`. Never duplicate scrollbar styling, keyframes, or base layer rules in app CSS.
 - **`@source` directives** → both apps scan shared packages so Tailwind sees all class names.
-
-## Desktop-specific Rules
-
-These rules apply to `apps/desktop/` only. Web has different constraints (URL bar, SSR, no tabs) and doesn't share these concerns. Every rule in this section was added after a concrete bug — treat them as enforced, not suggestions.
-
-### Route categories
-
-Every path in the desktop app falls into exactly one category. Choosing the wrong one reproduces bugs we've already fixed.
-
-- **Session routes** — workspace-scoped pages (`/:slug/issues`, `/:slug/settings`). Rendered by the per-tab memory router under `WorkspaceRouteLayout`. These are legitimate tab destinations.
-- **Transition flows** — pre-workspace / one-shot actions (create workspace, accept invite). **NOT routes.** They live as `WindowOverlay` state, dispatched when the navigation adapter sees `push('/workspaces/new')` or `push('/invite/<id>')`. The shared view (`NewWorkspacePage`, `InvitePage`) is the content; the overlay wrapper supplies platform chrome.
-- **Error / stale states** — "workspace not available", tabs pointing at a revoked workspace. **NOT pages.** `WorkspaceRouteLayout` auto-heals by dropping the stale tab group from the store; the user never lands on an explicit error screen. Web keeps `NoAccessPage` (shareable URL makes the error state meaningful); desktop has no URL bar so stale = heal silently.
-
-**Adding a new pre-workspace flow on desktop**: register a new `WindowOverlay` type in `stores/window-overlay-store.ts`. Do NOT add it to `routes.tsx`. If a shared view needs the flow on both platforms, add the route on web (`apps/web/app/(auth)/...`) AND the overlay type on desktop — the shared view component is identical.
-
-### Workspace context
-
-`setCurrentWorkspace(slug, uuid)` from `@multica/core/platform` is the single source of truth for the active workspace. `WorkspaceRouteLayout` sets it on mount; unmount does NOT clear it. Code that leaves workspace context (leave/delete workspace, force-navigate to overlay) must call `setCurrentWorkspace(null, null)` explicitly.
-
-### Workspace destructive operations
-
-Leave / Delete workspace flows must follow this order, otherwise concurrent refetches race and the renderer hard-reloads:
-
-1. Read destination from cached workspace list.
-2. `setCurrentWorkspace(null, null)`.
-3. `navigation.push(destination)`.
-4. THEN `await mutation.mutateAsync(workspaceId)`.
-
-### Tab isolation
-
-Tabs are grouped per workspace in `stores/tab-store.ts`. The TabBar shows only the active workspace's tabs; cross-workspace tab leakage is impossible by construction (no flat global tabs array).
-
-Cross-workspace `push(path)` is detected by the navigation adapter (`platform/navigation.tsx`) and translated into `switchWorkspace(slug, targetPath)` — NOT a navigation within the current tab's router. Don't bypass the adapter; always go through `useNavigation()` from shared code.
-
-### Drag region (macOS)
-
-Every full-window desktop view (anything outside the dashboard shell) must mount `<DragStrip />` from `@multica/views/platform` as the first flex child of the page root, otherwise users can't drag the window. Interactive UI inside the top 48px needs `WebkitAppRegion: "no-drag"` to stay clickable.
 
 ## UI/UX Rules
 
@@ -345,3 +306,94 @@ All queries filter by `workspace_id`. Membership checks gate access. `X-Workspac
 ## Agent Assignees
 
 Assignees are polymorphic — can be a member or an agent. `assignee_type` + `assignee_id` on issues. Agents render with distinct styling (purple background, robot icon).
+
+## CVE Remediation Pipeline
+
+A one-click automated CVE remediation workflow accessible via the shield button (🛡) in the Issues header.
+
+### What it does
+
+1. **Clone** — clones any missing repos. Two repo families with different sources:
+   - **gvt** (default): `ssh://git@stash.arubanetworks.com/gvt/<repo>.git` → `/root/dev-env/ws/<repo>`, branch `devel`.
+   - **ii-ae** (`ii-ae-*` prefix): `ssh://git@stash.arubanetworks.com/ii/<repo>.git` → `/root/central/<repo>`, branch `release/ii_1.118.0`.
+2. **Jira** — creates/reuses one Story per component group and one Sub-task per repo (searches by JQL first to avoid duplicates for the same month). gvt repos go to the **CNX** project (with component + fixVersion); ii-ae repos go to the **II** project (no component, no fixVersion).
+3. **Multica hierarchy** — creates one parent issue per component group (mirroring the Jira Story), then one sub-issue per repo (mirroring the Jira Sub-task) with `parent_issue_id` set. Sub-issue titles are `CNX-XXXXXX: CVE Remediation: <repo>` (or `II-XXXXX:` for ii-ae).
+4. **Agent dispatch** — all sub-issues are assigned to the Java Dev Agent which runs the trivy scan, fixes pom.xml, runs the ctl quality gate, and raises a PR.
+
+### Key implementation files
+
+| File | Purpose |
+|------|---------|
+| `packages/views/modals/cve-remediation.tsx` | Modal UI — repo list, clone/Jira/issue steps |
+| `packages/core/issues/mutations.ts` | `useCVERemediation` hook + `buildCVEIssueDescription` |
+| `server/internal/handler/repos.go` | `GET /api/repos/status`, `POST /api/repos/clone` |
+| `server/internal/handler/jira.go` | `POST /api/jira/cve-tickets` — Jira REST API calls |
+| `server/internal/handler/slack.go` | `POST /api/slack/cve-done` — Slack webhook on completion |
+
+### Repo list and component mapping
+
+Canonical repo list lives in both `CVE_REPO_LIST` (`cve-remediation.tsx`) and `cveRepoList` (`repos.go`) — keep them in sync. Component group → Jira component mapping:
+
+| Repo prefix | Jira project | Component group | Jira component |
+|-------------|--------------|-----------------|----------------|
+| `bridge-5g-*` | CNX | Bridge 5G | Bridge Monitoring |
+| `edge-platform-*` | CNX | Edge Platform | Edge Platform |
+| `edge-plugin-*` | CNX | Edge Plugin | Edge App Config |
+| `iotops-client-location-*` | CNX | Edge Location | Edge Location Engine |
+| `iotops-client-*` | CNX | IoTOps Client | Unified Client - Non IP |
+| `iotops-*` | CNX | IoTOps | IoT |
+| `ui-*` | CNX | UI Edge Platform | Edge Platform UI |
+| `ii-ae-*` | II | II AE | _(none)_ |
+
+`COMPONENT_PROJECT_MAP` in `cve-remediation.tsx` must be an **ordered array** (not an object) so longer prefixes match before shorter ones (e.g. `iotops-client-location` before `iotops-client`).
+
+### Path conventions
+
+Two repo families. The frontend `repoFamily()` helper resolves which set of paths/branch to use based on the `ii-ae-` prefix:
+
+| Family | Host base | Container base (mounted in `dev-env-dev-1`) | Base branch |
+|--------|-----------|---------------------------------------------|-------------|
+| gvt (default) | `/root/dev-env/ws/<repo>` | `/home/dev/repo/ws/<repo>` | `devel` |
+| ii-ae | `/root/central/<repo>` | `/home/dev/repo/central/<repo>` | `release/ii_1.118.0` |
+
+`/root/central` is mounted into `dev-env-dev-1` via `/root/dev-env/docker-compose.yml`. After editing that file, recreate the dev container so the new mount takes effect.
+
+`CVERemediationRepo` carries `hostPath` (for `cd` / `git` on host), `path` (for `docker exec` build commands inside the container), and `baseBranch` (the branch the agent syncs to and targets with the PR). **Do NOT use `multica repo checkout`** for CVE repos — they are pre-cloned to the host path.
+
+Non-Maven `ii-ae-*` repos (`cloud-connector`, `debug-dashboard`, `exporter`, `infrastructure`) are intentionally excluded from `CVE_REPO_LIST` — the trivy/ctl pipeline is Java-specific.
+
+### Environment variables required
+
+| Variable | Where needed | How set |
+|----------|-------------|---------|
+| `JIRA_TOKEN` | Backend container + host daemon | `.env` → Docker env; `/etc/environment` on host |
+| `SLACK_WEBHOOK_URL` | Backend container + host daemon | `.env` → Docker env; `/etc/environment` on host |
+
+The daemon must be restarted after adding to `/etc/environment` to pick up the values.
+
+### Agent issue instructions (already-clean path)
+
+When trivy reports 0 HIGH / 0 CRITICAL, the agent skips Steps 4–5 (ctl + PR) and goes directly to Step 6: transition Jira to **Resolve Issue**, set Multica issue to `done`, POST to `/api/slack/cve-done` with `pr_title = "Already clean — no PR needed"`.
+
+### Slack notification endpoint
+
+`POST /api/slack/cve-done` (requires `Authorization` + `X-Workspace-ID` headers):
+```json
+{
+  "repo": "edge-platform-core",
+  "jira_key": "CNX-240415",
+  "jira_url": "https://jira.arubanetworks.com/browse/CNX-240415",
+  "pr_title": "CNX-240415: chore: CVE remediation edge-platform-core",
+  "pr_url": "https://stash.arubanetworks.com/...",
+  "cve_high_before": 3,
+  "cve_critical_before": 1,
+  "cve_high_after": 0,
+  "cve_critical_after": 0
+}
+```
+
+## Daemon Task Dispatch
+
+The daemon poll loop (`server/internal/daemon/daemon.go`) drains the full task queue in a single poll cycle — it keeps claiming tasks across all runtimes until either the concurrency semaphore is full (`MaxConcurrentTasks`, default 20) or all runtimes return empty. It only sleeps `PollInterval` (default 1s) when no tasks were found.
+
+**Do not revert to `break` after claiming one task** — that was the original bug that caused 3-minute startup delays when many issues were created at once (one claim per 3s sleep cycle).
