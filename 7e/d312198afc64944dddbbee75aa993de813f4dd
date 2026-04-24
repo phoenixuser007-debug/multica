@@ -1,0 +1,42 @@
+server/internal/handler/jira.go
+  94bba8d22216b938 1-435
+server/internal/handler/repos.go
+  2807e65e1fdd0abd 4,6,12-14,18-23,26-42,54-55,78,96-97,103-104,113-121,124-167,171-172,231-240
+  94bba8d22216b938 1-3,5,7-11,15-17,24-25,43-53,56-77,79-95,98-102,105-112,122-123,168-170,173-230,241
+packages/views/modals/cve-remediation.tsx
+  94bba8d22216b938 1-92,104-105,107-108,134-141,143-228,234-407,425-489,491-568,572-762
+  2807e65e1fdd0abd 93-103,106,109-133,142,229-233,408-424,490,569-571
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "7ed312198afc64944dddbbee75aa993de813f4dd",
+  "prompts": {
+    "2807e65e1fdd0abd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6a0dcd20-bb90-44f8-9371-863a75e4f6c8",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": null,
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 306,
+      "overriden_lines": 0
+    },
+    "94bba8d22216b938": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ae28102-ba99-4d8c-a3b2-7389f1b3d313",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 2103,
+      "total_deletions": 1265,
+      "accepted_lines": 3443,
+      "overriden_lines": 0
+    }
+  }
+}
