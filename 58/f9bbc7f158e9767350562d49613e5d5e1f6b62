@@ -1,0 +1,63 @@
+apps/docs/lib/i18n.ts
+  35a657f7d8cf4b89 4
+apps/web/features/landing/i18n/types.ts
+  35a657f7d8cf4b89 1,3
+apps/web/features/landing/i18n/context.tsx
+  35a657f7d8cf4b89 3,26,35
+apps/web/features/landing/i18n/en.ts
+  35a657f7d8cf4b89 422,686
+apps/docs/content/docs/agents-create.mdx
+  35a657f7d8cf4b89 77,83
+apps/docs/app/api/search/route.ts
+  35a657f7d8cf4b89 4
+apps/web/app/layout.tsx
+  35a657f7d8cf4b89 9,11
+apps/web/features/landing/components/landing-footer.tsx
+  35a657f7d8cf4b89 8,11,91
+apps/web/features/landing/components/changelog-page-client.tsx
+  35a657f7d8cf4b89 40,45,104,198,277
+apps/docs/app/global.css
+  35a657f7d8cf4b89 146-148,155,213-216
+apps/docs/lib/translations.ts
+  35a657f7d8cf4b89 4
+apps/desktop/src/renderer/src/main.tsx
+  35a657f7d8cf4b89 4
+apps/desktop/src/renderer/src/globals.css
+  35a657f7d8cf4b89 9-12,15
+apps/docs/components/docs-settings.tsx
+  35a657f7d8cf4b89 21,35
+apps/web/app/(landing)/layout.tsx
+  35a657f7d8cf4b89 1,46-47
+apps/docs/lib/site.ts
+  35a657f7d8cf4b89 12
+apps/docs/middleware.ts
+  35a657f7d8cf4b89 6-7
+apps/docs/components/hero.tsx
+  35a657f7d8cf4b89 8
+apps/docs/app/[lang]/layout.tsx
+  35a657f7d8cf4b89 11,31-33,100
+apps/web/features/landing/components/how-it-works-section.tsx
+  35a657f7d8cf4b89 9,48
+apps/docs/app/[lang]/page.tsx
+  35a657f7d8cf4b89 18-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "58f9bbc7f158e9767350562d49613e5d5e1f6b62",
+  "prompts": {
+    "35a657f7d8cf4b89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d00df2d2-5112-4932-ade5-4c210617d70e",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 23,
+      "total_deletions": 4781,
+      "accepted_lines": 339,
+      "overriden_lines": 0
+    }
+  }
+}
