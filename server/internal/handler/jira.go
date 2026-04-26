@@ -1,88 +1,34 @@
 package handler
 
+// Aruba CVE remediation Jira flow.
+//
+// All Aruba-specific logic (field IDs, project keys, component map, sprint
+// format quirk, JQL templates, assignee, fix-version naming) lives in the
+// `cve-jira` skill at scripts/cve-skills/cve-jira/cve_jira.py. This handler
+// is pure orchestration: parse the request, plan the work, fan out parallel
+// shell-outs, assemble the response. To change Aruba quirks, edit the script
+// — no Go rebuild required.
+
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
+	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
-	"regexp"
+	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
-const (
-	jiraBaseURL     = "https://jira.arubanetworks.com"
-	jiraProjectGvt  = "CNX"
-	jiraProjectII   = "II"
-	jiraAssignee    = "naveen.u.holla@hpe.com"
-	jiraSprintField = "customfield_10005"
-)
+// --- API contract ----------------------------------------------------------
 
-// componentGroup maps a repo name prefix to its human-readable group name (used as story title).
-func componentGroup(repo string) string {
-	switch {
-	case strings.HasPrefix(repo, "bridge-5g-"):
-		return "Bridge 5G"
-	case strings.HasPrefix(repo, "edge-platform-"):
-		return "Edge Platform"
-	case strings.HasPrefix(repo, "edge-plugin-"):
-		return "Edge Plugin"
-	case strings.HasPrefix(repo, "iotops-client-location-"):
-		return "Edge Location"
-	case strings.HasPrefix(repo, "iotops-client-"):
-		return "IoTOps Client"
-	case strings.HasPrefix(repo, "iotops-"):
-		return "IoTOps"
-	case strings.HasPrefix(repo, "ui-"):
-		return "UI"
-	case strings.HasPrefix(repo, "ii-ae-"):
-		return "II AE"
-	default:
-		return "Other"
-	}
-}
-
-// repoJiraProject returns the Jira project key the repo's tickets belong to.
-func repoJiraProject(repo string) string {
-	if strings.HasPrefix(repo, "ii-ae-") {
-		return jiraProjectII
-	}
-	return jiraProjectGvt
-}
-
-// jiraComponent returns the valid Jira component name for a given group, or empty
-// if no component should be set (e.g. for projects we don't have a component map for).
-func jiraComponent(group string) string {
-	switch group {
-	case "Bridge 5G":
-		return "Bridge Monitoring"
-	case "Edge Platform":
-		return "Edge Platform"
-	case "Edge Plugin":
-		return "Edge App Config"
-	case "Edge Location":
-		return "Edge Location Engine"
-	case "IoTOps Client":
-		return "Unified Client - Non IP"
-	case "IoTOps":
-		return "IoT"
-	case "UI":
-		return "Edge Platform UI"
-	case "II AE":
-		// II project mandates a component on Stories. ii-ae-platform is the umbrella
-		// component spanning all ii-ae-* repos.
-		return "ii-ae-platform"
-	default:
-		return ""
-	}
-}
-
-// JiraTicket holds a Jira issue key, URL, and whether it already existed.
+// JiraTicket is a single Jira issue surfaced in the response.
 type JiraTicket struct {
 	Key      string `json:"key"`
 	URL      string `json:"url"`
@@ -111,9 +57,118 @@ type CreateCVEJiraTicketsResponse struct {
 	Errors  map[string]string     `json:"errors"`
 }
 
+// --- Skill invocation ------------------------------------------------------
+
+// Container path; in dev we fall back to the repo-relative path so `go run`
+// works without env tweaks. Override with $CVE_JIRA_SCRIPT for tests.
+const cveJiraScriptContainer = "/app/scripts/cve-skills/cve-jira/cve_jira.py"
+const cveJiraScriptDev = "scripts/cve-skills/cve-jira/cve_jira.py"
+
+func cveJiraScriptPath() string {
+	if p := os.Getenv("CVE_JIRA_SCRIPT"); p != "" {
+		return p
+	}
+	if _, err := os.Stat(cveJiraScriptContainer); err == nil {
+		return cveJiraScriptContainer
+	}
+	return cveJiraScriptDev
+}
+
+// runCveJira execs the skill and returns its stdout JSON.
+func runCveJira(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "python3", append([]string{cveJiraScriptPath()}, args...)...)
+	cmd.Env = os.Environ() // inherit JIRA_TOKEN
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return nil, fmt.Errorf("cve_jira.py %s: %s", args[0], strings.TrimSpace(string(ee.Stderr)))
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+type cveJiraTicketOut struct {
+	Key      string `json:"key"`
+	URL      string `json:"url"`
+	Existing bool   `json:"existing"`
+	Error    string `json:"error,omitempty"`
+}
+
+// callTicket runs a find-or-create-* command and parses the resulting ticket.
+func callTicket(ctx context.Context, args ...string) (cveJiraTicketOut, error) {
+	out, err := runCveJira(ctx, args...)
+	if err != nil {
+		return cveJiraTicketOut{}, err
+	}
+	var t cveJiraTicketOut
+	if err := json.Unmarshal(out, &t); err != nil {
+		return cveJiraTicketOut{}, fmt.Errorf("parse: %w (raw: %s)", err, out)
+	}
+	if t.Error != "" {
+		return cveJiraTicketOut{}, errors.New(t.Error)
+	}
+	if t.Key == "" {
+		return cveJiraTicketOut{}, fmt.Errorf("no key in response: %s", out)
+	}
+	return t, nil
+}
+
+type cveJiraPlan struct {
+	Groups []cveJiraPlanGroup `json:"groups"`
+}
+
+type cveJiraPlanGroup struct {
+	Group     string   `json:"group"`
+	Project   string   `json:"project"`
+	Component string   `json:"component"`
+	Repos     []string `json:"repos"`
+}
+
+func planRepos(ctx context.Context, repos []string) (*cveJiraPlan, error) {
+	f, err := os.CreateTemp("", "cve-repos-*.txt")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(f.Name())
+	for _, r := range repos {
+		if _, err := fmt.Fprintln(f, r); err != nil {
+			f.Close()
+			return nil, err
+		}
+	}
+	f.Close()
+
+	out, err := runCveJira(ctx, "plan", "--repos-file", f.Name())
+	if err != nil {
+		return nil, err
+	}
+	var p cveJiraPlan
+	if err := json.Unmarshal(out, &p); err != nil {
+		return nil, fmt.Errorf("parse plan: %w (raw: %s)", err, out)
+	}
+	return &p, nil
+}
+
+func discoverSprintID(ctx context.Context) int {
+	out, err := runCveJira(ctx, "discover-sprint")
+	if err != nil {
+		return 0
+	}
+	var r struct {
+		SprintID int `json:"sprint_id"`
+	}
+	if err := json.Unmarshal(out, &r); err != nil {
+		return 0
+	}
+	return r.SprintID
+}
+
+// --- Handler ---------------------------------------------------------------
+
 func (h *Handler) CreateCVEJiraTickets(w http.ResponseWriter, r *http.Request) {
-	token := os.Getenv("JIRA_TOKEN")
-	if token == "" {
+	if os.Getenv("JIRA_TOKEN") == "" {
 		http.Error(w, "JIRA_TOKEN not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -124,10 +179,20 @@ func (h *Handler) CreateCVEJiraTickets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Detach Jira work from the request context so a Next.js proxy timeout
+	// doesn't leave half the tickets created and half cancelled mid-flight.
+	jiraCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	plan, err := planRepos(jiraCtx, req.Repos)
+	if err != nil {
+		http.Error(w, "plan failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	sprintID := discoverSprintID(jiraCtx)
+	monthLabel := time.Now().Format("2006-01")
 	today := time.Now().Format("2006-01-02")
-	monthLabel := currentJiraMonthLabel()
-	fixVersion := currentJiraFixVersion()
-	sprintID := currentJiraSprintID(r.Context(), token)
 
 	resp := CreateCVEJiraTicketsResponse{
 		Stories: map[string]JiraTicket{},
@@ -135,301 +200,94 @@ func (h *Handler) CreateCVEJiraTickets(w http.ResponseWriter, r *http.Request) {
 		Errors:  map[string]string{},
 	}
 
-	// Group repos by component. Each component maps to exactly one Jira project,
-	// so the project key can be derived from any repo in the group.
-	groups := map[string][]string{}
-	groupProject := map[string]string{}
-	for _, repo := range req.Repos {
-		cg := componentGroup(repo)
-		groups[cg] = append(groups[cg], repo)
-		groupProject[cg] = repoJiraProject(repo)
-	}
-
-	// Ensure one Story per component group for this month
 	storyKeys := map[string]string{}
-	for component, repos := range groups {
-		project := groupProject[component]
-		storyTitle := fmt.Sprintf("CVE Remediation: %s", component)
-		storyFullTitle := fmt.Sprintf("%s — %s", storyTitle, monthLabel)
-		jql := fmt.Sprintf(
-			`project = %s AND issuetype = Story AND summary = "%s" ORDER BY created DESC`,
-			project, storyFullTitle,
-		)
-		existing, err := jiraSearchFirst(r.Context(), token, jql)
-		if err == nil && existing != "" {
-			storyKeys[component] = existing
-			resp.Stories[component] = JiraTicket{Key: existing, URL: jiraWebURL(existing), Existing: true}
-			continue
-		}
+	var mu sync.Mutex
 
-		desc := fmt.Sprintf(
-			"Parent story for CVE remediation of all %s repositories (%s).\n\nRepos:\n- %s",
-			component, today, strings.Join(repos, "\n- "),
-		)
-		// Only set fixVersion for CNX (we don't track ii fixVersion naming yet).
-		fv := ""
-		if project == jiraProjectGvt {
-			fv = fixVersion
-		}
-		key, url, err := jiraCreate(r.Context(), token, jiraCreateFields{
-			Project:     project,
-			IssueType:   "Story",
-			Summary:     fmt.Sprintf("%s — %s", storyTitle, monthLabel),
-			Description: desc,
-			Component:   jiraComponent(component),
-			FixVersion:  fv,
-			Assignee:    jiraAssignee,
-			SprintID:    sprintID,
+	// Stories: one per component group, parallel.
+	storyGroup, storyCtx := errgroup.WithContext(jiraCtx)
+	storyGroup.SetLimit(8)
+	for _, g := range plan.Groups {
+		g := g
+		storyGroup.Go(func() error {
+			summary := fmt.Sprintf("CVE Remediation: %s — %s", g.Group, monthLabel)
+			desc := fmt.Sprintf(
+				"Parent story for CVE remediation of all %s repositories (%s).\n\nRepos:\n- %s",
+				g.Group, today, strings.Join(g.Repos, "\n- "),
+			)
+			args := []string{
+				"find-or-create-story",
+				"--project", g.Project,
+				"--summary", summary,
+				"--description", desc,
+				"--component", g.Component,
+			}
+			if sprintID > 0 {
+				args = append(args, "--sprint-id", strconv.Itoa(sprintID))
+			}
+			t, err := callTicket(storyCtx, args...)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				slog.Warn("jira story create failed", "group", g.Group, "project", g.Project, "error", err.Error())
+				resp.Errors["story:"+g.Group] = err.Error()
+				return nil
+			}
+			storyKeys[g.Group] = t.Key
+			resp.Stories[g.Group] = JiraTicket{Key: t.Key, URL: t.URL, Existing: t.Existing}
+			return nil
 		})
-		if err != nil {
-			resp.Errors["story:"+component] = err.Error()
-			continue
+	}
+	_ = storyGroup.Wait()
+
+	// Repo → group lookup for the sub-task fan-out.
+	repoMeta := map[string]cveJiraPlanGroup{}
+	for _, g := range plan.Groups {
+		for _, repo := range g.Repos {
+			repoMeta[repo] = g
 		}
-		storyKeys[component] = key
-		resp.Stories[component] = JiraTicket{Key: key, URL: url, Existing: false}
 	}
 
-	// Ensure one Sub-task per repo under its parent story
+	// Sub-tasks: one per repo, parallel. Sprint inherited from parent — never set.
+	subtaskGroup, subtaskCtx := errgroup.WithContext(jiraCtx)
+	subtaskGroup.SetLimit(25)
 	for _, repo := range req.Repos {
-		cg := componentGroup(repo)
-		parentKey := storyKeys[cg]
-		project := groupProject[cg]
+		repo := repo
+		subtaskGroup.Go(func() error {
+			meta := repoMeta[repo]
+			mu.Lock()
+			parentKey := storyKeys[meta.Group]
+			mu.Unlock()
 
-		subtaskTitle := fmt.Sprintf("CVE Remediation: %s", repo)
-		subtaskFullTitle := fmt.Sprintf("%s — %s", subtaskTitle, monthLabel)
-		jql := fmt.Sprintf(
-			`project = %s AND issuetype = "Sub-task" AND summary = "%s" ORDER BY created DESC`,
-			project, subtaskFullTitle,
-		)
-		existing, err := jiraSearchFirst(r.Context(), token, jql)
-		if err == nil && existing != "" {
+			summary := fmt.Sprintf("CVE Remediation: %s — %s", repo, monthLabel)
+			desc := fmt.Sprintf(
+				"CVE scan and remediation for `%s`.\n\nBranch: `chore/cve-remediation-%s`\nParent story: %s",
+				repo, today, parentKey,
+			)
+			args := []string{
+				"find-or-create-subtask",
+				"--project", meta.Project,
+				"--parent-key", parentKey,
+				"--summary", summary,
+				"--description", desc,
+			}
+			t, err := callTicket(subtaskCtx, args...)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				slog.Warn("jira subtask create failed", "repo", repo, "group", meta.Group, "project", meta.Project, "parent_key", parentKey, "error", err.Error())
+				resp.Errors["subtask:"+repo] = err.Error()
+				resp.Repos = append(resp.Repos, JiraRepoTicket{Repo: repo, Component: meta.Group, StoryKey: parentKey})
+				return nil
+			}
 			resp.Repos = append(resp.Repos, JiraRepoTicket{
-				Repo: repo, Component: cg, StoryKey: parentKey,
-				SubtaskKey: existing, SubtaskURL: jiraWebURL(existing), Existing: true,
+				Repo: repo, Component: meta.Group, StoryKey: parentKey,
+				SubtaskKey: t.Key, SubtaskURL: t.URL, Existing: t.Existing,
 			})
-			continue
-		}
-
-		desc := fmt.Sprintf(
-			"CVE scan and remediation for `%s`.\n\nBranch: `chore/cve-remediation-%s`\nParent story: %s",
-			repo, today, parentKey,
-		)
-		key, url, err := jiraCreate(r.Context(), token, jiraCreateFields{
-			Project:     project,
-			IssueType:   "Sub-task",
-			Summary:     fmt.Sprintf("%s — %s", subtaskTitle, monthLabel),
-			Description: desc,
-			ParentKey:   parentKey,
-			Assignee:    jiraAssignee,
-			SprintID:    sprintID,
-		})
-		if err != nil {
-			resp.Errors["subtask:"+repo] = err.Error()
-			resp.Repos = append(resp.Repos, JiraRepoTicket{Repo: repo, Component: cg, StoryKey: parentKey})
-			continue
-		}
-		resp.Repos = append(resp.Repos, JiraRepoTicket{
-			Repo: repo, Component: cg, StoryKey: parentKey,
-			SubtaskKey: key, SubtaskURL: url, Existing: false,
+			return nil
 		})
 	}
+	_ = subtaskGroup.Wait()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
-}
-
-// jiraSearchFirst runs a JQL query against the Jira REST API and returns the first issue key.
-func jiraSearchFirst(ctx context.Context, token, jql string) (string, error) {
-	params := url.Values{}
-	params.Set("jql", jql)
-	params.Set("maxResults", "1")
-	params.Set("fields", "summary")
-
-	req, err := http.NewRequestWithContext(ctx, "GET",
-		jiraBaseURL+"/rest/api/2/search?"+params.Encode(), nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("search %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var result struct {
-		Total  int `json:"total"`
-		Issues []struct {
-			Key string `json:"key"`
-		} `json:"issues"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
-	}
-	if result.Total == 0 || len(result.Issues) == 0 {
-		return "", fmt.Errorf("not found")
-	}
-	return result.Issues[0].Key, nil
-}
-
-type jiraCreateFields struct {
-	Project     string
-	IssueType   string
-	Summary     string
-	Description string
-	Component   string
-	FixVersion  string
-	ParentKey   string
-	Assignee    string
-	SprintID    int
-}
-
-// jiraCreate creates a Jira issue via the REST API and returns the new key + URL.
-func jiraCreate(ctx context.Context, token string, f jiraCreateFields) (string, string, error) {
-	project := f.Project
-	if project == "" {
-		project = jiraProjectGvt
-	}
-	fields := map[string]any{
-		"project":     map[string]string{"key": project},
-		"summary":     f.Summary,
-		"description": f.Description,
-		"issuetype":   map[string]string{"name": f.IssueType},
-	}
-	if f.Component != "" {
-		fields["components"] = []map[string]string{{"name": f.Component}}
-	}
-	isSubtask := strings.EqualFold(f.IssueType, "sub-task")
-	if f.FixVersion != "" && !isSubtask {
-		fields["fixVersions"] = []map[string]string{{"name": f.FixVersion}}
-		fields["versions"] = []map[string]string{{"name": f.FixVersion}}
-	}
-	if f.ParentKey != "" {
-		fields["parent"] = map[string]string{"key": f.ParentKey}
-	}
-	if f.Assignee != "" {
-		fields["assignee"] = map[string]string{"name": f.Assignee}
-	}
-	if f.SprintID != 0 {
-		fields[jiraSprintField] = []int{f.SprintID}
-	}
-	// customfield_12201 (Cloud/SDK) only exists on CNX sub-tasks; skip elsewhere.
-	if isSubtask && project == jiraProjectGvt {
-		fields["customfield_12201"] = []map[string]string{{"value": "Cloud"}}
-	}
-
-	body, err := json.Marshal(map[string]any{"fields": fields})
-	if err != nil {
-		return "", "", err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST",
-		jiraBaseURL+"/rest/api/2/issue", bytes.NewReader(body))
-	if err != nil {
-		return "", "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusCreated {
-		return "", "", fmt.Errorf("%d — %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
-	}
-
-	var result struct {
-		Key string `json:"key"`
-	}
-	if err := json.Unmarshal(respBody, &result); err != nil || result.Key == "" {
-		return "", "", fmt.Errorf("unexpected response: %s", string(respBody))
-	}
-	return result.Key, jiraWebURL(result.Key), nil
-}
-
-func jiraWebURL(key string) string {
-	return jiraBaseURL + "/browse/" + key
-}
-
-func currentJiraMonthLabel() string {
-	return time.Now().Format("2006-01")
-}
-
-func currentJiraFixVersion() string {
-	months := []string{"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"}
-	t := time.Now()
-	return fmt.Sprintf("CNX-%s-%d", months[t.Month()-1], t.Year())
-}
-
-// currentJiraSprintID returns the assignee's active sprint ID, discovered dynamically from
-// Jira (no hardcoded board). It searches for the most recently updated issue assigned to
-// the CVE assignee that's currently in an open sprint, then parses the Sprint customfield's
-// Java-toString format to find the one with state=ACTIVE. Returns 0 if none found.
-func currentJiraSprintID(ctx context.Context, token string) int {
-	jql := fmt.Sprintf(`assignee = "%s" AND sprint in openSprints() ORDER BY updated DESC`, jiraAssignee)
-	params := url.Values{}
-	params.Set("jql", jql)
-	params.Set("fields", jiraSprintField)
-	params.Set("maxResults", "1")
-
-	req, err := http.NewRequestWithContext(ctx, "GET",
-		jiraBaseURL+"/rest/api/2/search?"+params.Encode(), nil)
-	if err != nil {
-		return 0
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return 0
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return 0
-	}
-
-	var result struct {
-		Issues []struct {
-			Fields map[string]any `json:"fields"`
-		} `json:"issues"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || len(result.Issues) == 0 {
-		return 0
-	}
-	raw, ok := result.Issues[0].Fields[jiraSprintField].([]any)
-	if !ok {
-		return 0
-	}
-	// Sprint customfield comes back as Java toString:
-	//   com.atlassian.greenhopper.service.sprint.Sprint@hash[id=5084,...,state=ACTIVE,...]
-	idRe := regexp.MustCompile(`id=(\d+)`)
-	stateRe := regexp.MustCompile(`state=([A-Z]+)`)
-	for _, item := range raw {
-		s, ok := item.(string)
-		if !ok {
-			continue
-		}
-		stateMatch := stateRe.FindStringSubmatch(s)
-		idMatch := idRe.FindStringSubmatch(s)
-		if len(stateMatch) == 2 && stateMatch[1] == "ACTIVE" && len(idMatch) == 2 {
-			id, err := strconv.Atoi(idMatch[1])
-			if err == nil {
-				return id
-			}
-		}
-	}
-	return 0
 }
