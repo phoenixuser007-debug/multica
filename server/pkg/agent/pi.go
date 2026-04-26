@@ -37,8 +37,17 @@ func (b *piBackend) Execute(ctx context.Context, prompt string, opts ExecOptions
 	// Pi's --session flag expects a file path where events are appended.
 	// The path doubles as our opaque session identifier: we return it as
 	// SessionID and expect it back as ResumeSessionID on the next turn.
+	//
+	// If ResumeSessionID is empty OR doesn't look like a path we wrote (e.g.
+	// it's a Copilot-style "ses_..." string left over from when this agent
+	// was on a different runtime tool), start a fresh session instead of
+	// failing. Pi's "No session found" error is non-recoverable: the agent
+	// run aborts immediately, the task fails, and the bad ID stays cached.
 	sessionPath := opts.ResumeSessionID
-	if sessionPath == "" {
+	if !isPiSessionPath(sessionPath) {
+		if sessionPath != "" {
+			b.cfg.Logger.Warn("pi: discarding non-path resume session id", "session_id", sessionPath)
+		}
 		p, err := newPiSessionPath()
 		if err != nil {
 			return nil, fmt.Errorf("pi session path: %w", err)
@@ -377,6 +386,14 @@ func newPiSessionPath() (string, error) {
 	}
 	name := fmt.Sprintf("%s.jsonl", time.Now().UTC().Format("20060102T150405.000000000"))
 	return filepath.Join(dir, name), nil
+}
+
+// isPiSessionPath returns true if s looks like a Pi session file path that
+// this adapter would have written: an absolute path ending in .jsonl. False
+// for empty strings and for opaque IDs left over from other runtime tools
+// (Copilot's "ses_…", Claude's UUIDs, etc.).
+func isPiSessionPath(s string) bool {
+	return s != "" && filepath.IsAbs(s) && strings.HasSuffix(s, ".jsonl")
 }
 
 // ensurePiSessionFile creates an empty session file if one does not yet

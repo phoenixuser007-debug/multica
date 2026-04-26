@@ -17,6 +17,26 @@ func TestNewReturnsPiBackend(t *testing.T) {
 	}
 }
 
+func TestIsPiSessionPath(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"", false},
+		{"ses_242a1fe82ffe7TFk0FFyFVXrD1", false},        // Copilot-style opaque id
+		{"abc123-def4-5678-9abc-def012345678", false},   // Claude-style UUID
+		{"./local.jsonl", false},                          // not absolute
+		{"/root/.multica/pi-sessions/abc.txt", false},     // wrong suffix
+		{"/root/.multica/pi-sessions/20260426T191500.000000000.jsonl", true},
+	}
+	for _, c := range cases {
+		if got := isPiSessionPath(c.in); got != c.want {
+			t.Errorf("isPiSessionPath(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
 func TestBuildPiArgsMatchesBadlogicCodingAgentJSONMode(t *testing.T) {
 	t.Parallel()
 
