@@ -1,0 +1,57 @@
+packages/views/issues/components/issues-header.tsx
+  35a657f7d8cf4b89 15,66,402-403,449-465
+packages/core/api/client.ts
+  35a657f7d8cf4b89 704-732
+packages/core/modals/store.ts
+  35a657f7d8cf4b89 14
+packages/views/modals/registry.tsx
+  35a657f7d8cf4b89 12,36-37
+server/cmd/server/router.go
+  35a657f7d8cf4b89 421-425
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "e6226ce913a3480b1735ff2b8a81ebb2d64aa061",
+  "prompts": {
+    "35a657f7d8cf4b89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d00df2d2-5112-4932-ade5-4c210617d70e",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 1595,
+      "total_deletions": 1020,
+      "accepted_lines": 854,
+      "overriden_lines": 0
+    },
+    "94bba8d22216b938": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ae28102-ba99-4d8c-a3b2-7389f1b3d313",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 544,
+      "total_deletions": 284,
+      "accepted_lines": 533,
+      "overriden_lines": 0
+    },
+    "f00b803ac2bc0404": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dcad9-7138-7bf1-9a4d-3955b2bde1bf",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 2,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
