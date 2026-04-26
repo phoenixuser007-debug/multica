@@ -19,6 +19,8 @@ The current issue's description contains:
 
 - `BITBUCKET_STASH_TOKEN` — Stash PAT (repo-read + repo-write, SSH preferred for push)
 - `MULTICA_API_URL`, `MULTICA_TOKEN`, `MULTICA_WORKSPACE_ID`, `IOTOPS_VERIFIER_AGENT_ID`
+- `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID` — for threaded Slack replies (optional; graceful no-op if absent)
+- `SLACK_WEBHOOK_URL` — fallback for non-threaded posts when bot token is unset
 - `dev-env-dev-1` Docker container running on the host (same container CVE flow uses).
 - The `ctl` skill is attached to this agent — use it via its own documented interface.
 
@@ -51,22 +53,41 @@ Before touching any code, reason through and post a comment:
 
 This forces an explicit plan before the TDD cycle.
 
-### 3. Clone and branch
+After posting the comment, reply to the Scout's Slack thread with the RCA summary
+so the team can track progress in real time:
 
 ```bash
-WORKDIR=$(mktemp -d -t iotops-fix-$SERVICE-XXXX)
-cd "$WORKDIR"
+# Load helpers from the shared skill (materialised alongside this skill at runtime)
+source ~/.claude/skills/iotops-verify-pr-slack/slack-templates.md 2>/dev/null || true
 
-# The repo lives at /root/dev-env/ws/<service> on the host (mirrors CVE path).
-# Work inside a fresh shallow clone so the Fixer run is idempotent.
-git clone --depth 1 --single-branch -b devel \
-  "ssh://git@stash.arubanetworks.com/gvt/$SERVICE.git" repo
-cd repo
+# thread_ts was stored by Scout in a comment on this Fixer issue
+SLACK_THREAD_TS=$(extract_thread_ts "$FIXER_ISSUE_ID")
+
+RCA_MSG=$(printf ':mag: *RCA identified*\n*Service:* `%s`  |  *Exception:* `%s`\n*Root cause:* %s\n*Approach:* %s\nStarting TDD fix (red→green)…' \
+  "$SERVICE" "$EXC" "$ROOT_CAUSE" "$APPROACH")
+
+slack_post "$RCA_MSG" "$SLACK_THREAD_TS"
+```
+
+### 3. Use the pre-cloned repo and branch
+
+The repos are already cloned at `/root/dev-env/ws/<service>` — the same path used by the CVE flow. **Do not clone to /tmp.** Work directly in the existing checkout:
+
+```bash
+REPO="/root/dev-env/ws/$SERVICE"
+cd "$REPO"
+
+# Sync to latest devel
+git fetch origin devel
+git checkout devel
+git reset --hard origin/devel
 
 SLUG=$(echo "$EXC" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-40)
 BRANCH="bugfix/${JIRA_KEY}-${SLUG}"
 git checkout -b "$BRANCH"
 ```
+
+The container path for `docker exec` commands is `/home/dev/repo/ws/$SERVICE` (same directory, mounted into `dev-env-dev-1`).
 
 ### 4. RED — write the failing test FIRST
 
@@ -106,6 +127,24 @@ docker exec dev-env-dev-1 bash -c \
 
 If it still fails, iterate (edit → re-test). If it passes, continue.
 
+### 5a. Ensure git safe.directory inside the dev container
+
+`tools/lint-source-code.sh` triggers a `pre-commit` hook that calls `git`
+inside `dev-env-dev-1`. If git rejects the mounted repo with
+`fatal: detected dubious ownership in repository at ...`, the lint fails
+before any check runs. Set the wildcard once (idempotent — safe to run on
+every Fixer pickup):
+
+```bash
+docker exec dev-env-dev-1 bash -c \
+  "git config --global --get-all safe.directory | grep -qx '*' \
+   || git config --global --add safe.directory '*'"
+```
+
+The setting is per-user in the container's home directory, so it survives
+container restarts but **not** container recreation. Run this guard before
+invoking `ctl`.
+
 ### 6. Full quality gate — use the `ctl` skill
 
 The `ctl` skill runs compile → unit tests → lint source code → lint k8s objects inside `dev-env-dev-1`. Invoke it exactly as the CVE flow does. **Do not substitute your own `mvn verify`** — `ctl` covers more checks and matches what Jenkins will run later.
@@ -113,7 +152,16 @@ The `ctl` skill runs compile → unit tests → lint source code → lint k8s ob
 If `ctl` fails:
 - Post a comment on the current issue with the last 80 lines of the failed step's log
 - Set the issue status to `blocked`
-- Post a Slack alert by curling `$SLACK_WEBHOOK_URL` directly with the `validation_failed` template from the Verifier's `slack-templates.md` (shape is shared — Fixer uses the same webhook, different outcome string).
+- Post a Slack alert using the `validation_failed` template from `slack-templates.md`, threaded into the existing Scout thread:
+
+```bash
+source ~/.claude/skills/iotops-verify-pr-slack/slack-templates.md 2>/dev/null || true
+SLACK_THREAD_TS=$(extract_thread_ts "$FIXER_ISSUE_ID")
+VAL_MSG=$(printf ':warning: *Auto-fix FAILED compile/lint in dev-env*\n*Service:* `%s`  |  *Jira:* <%s|%s>\nNo PR raised — issue is blocked and needs human review.' \
+  "$SERVICE" "$JIRA_URL" "$JIRA_KEY")
+slack_post "$VAL_MSG" "$SLACK_THREAD_TS"
+```
+
 - Do **NOT** spawn a Verifier child. Exit.
 
 ### 7. Commit + push

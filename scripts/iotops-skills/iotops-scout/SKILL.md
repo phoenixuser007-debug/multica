@@ -23,7 +23,9 @@ Optional URL overrides (only when the default cloudops pattern doesn't apply):
 Other:
 - `BITBUCKET_STASH_TOKEN` — Stash PAT (fetches affected source files for classification)
 - `JIRA_TOKEN`, `JIRA_USERNAME` — for the Jira Bug creation step
-- `MULTICA_API_URL`, `MULTICA_TOKEN`, `MULTICA_WORKSPACE_ID`, `IOTOPS_FIXER_AGENT_ID` — to create the child issue
+- `MULTICA_API_URL`, `MULTICA_APP_URL`, `MULTICA_TOKEN`, `MULTICA_WORKSPACE_ID`, `IOTOPS_FIXER_AGENT_ID` — to create the child issue
+- `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID` — Bot API token and channel for threaded notifications (optional; falls back to `SLACK_WEBHOOK_URL` without threading if unset)
+- `SLACK_WEBHOOK_URL` — fallback webhook if bot token is not configured
 - `python3` with `requests` on PATH
 - The bundled helper script `scripts/humio_client.py` (materialized to `.claude/skills/humio-skill/scripts/humio_client.py` at task-claim time — attached via the `humio-skill` you also have).
 
@@ -31,7 +33,11 @@ Other:
 
 ### 1. Determine the window
 
-The autopilot runs daily. Use a **24-hour sliding window ending at `now`** (or whatever the time since the previous Scout tick — read `created_at` of the previous tick issue via `GET /api/issues?q=Scan+iotops-client-*&limit=2&order=-created_at` and use that as `start`, else fall back to 24 h).
+The autopilot runs daily. Use a **24-hour sliding window ending at `now`** by default.
+
+To find the start of the window: search for the previous Scout tick via `multica issue search "Scan iotops-client-*" --output json`, filter to issues with `status == "done"` or `status == "in_review"` (i.e. **not** `blocked` or `cancelled`), sort by `created_at` descending, and use the most recent successful tick's `created_at` as `start`. If no successful previous tick exists, fall back to 24 h ago.
+
+**Important:** only advance the window from a tick that successfully completed (reached `done`/`in_review`). A `blocked` or `cancelled` tick did not create Fixer issues, so its timestamp must **not** be used as the new window start — doing so would silently drop all the errors that tick found.
 
 ### 2. Scan each of 4 clusters
 
@@ -176,6 +182,38 @@ The description content must follow this template (the Fixer skill parses these 
 ```
 
 Title: `[<service_repo>] <JIRA_KEY>: <ExceptionClass> at <source_file>:<line>`.
+
+### 8a. Post initial Slack message and propagate thread_ts
+
+Immediately after the Fixer child issue is created, post a Slack message so the
+team knows an error was detected. If `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID` are
+set the `slack_post` function (from `iotops-verify-pr-slack/slack-templates.md`)
+returns a `ts` — store it in a multica comment on the Fixer issue so the Fixer
+and Verifier can thread their replies.
+
+```bash
+# Load slack_post and extract_thread_ts from the shared template file
+# (the skill runtime materialises all attached skill files under ~/.claude/skills/)
+source ~/.claude/skills/iotops-verify-pr-slack/slack-templates.md 2>/dev/null || true
+# If sourcing fails (non-bash context), define slack_post inline (copy from slack-templates.md).
+
+FIXER_ISSUE_URL="${MULTICA_APP_URL:-http://localhost:3001}/issues/${FIXER_ISSUE_ID}"
+
+SCOUT_MSG=$(printf ':bug: *New IoTOps error detected*\n*Service:* `%s`  |  *Cluster:* %s\n*Exception:* `%s` at `%s:%s`\n*Jira:* <%s|%s>  |  *Humio:* <%s|Open>  |  *Issue:* <%s|View in Multica>' \
+  "$SERVICE" "$CLUSTER" "$EXC" "$FILE" "$LINE" "$JIRA_URL" "$JIRA_KEY" "$HUMIO_LINK" "$FIXER_ISSUE_URL")
+
+SLACK_RESP=$(slack_post "$SCOUT_MSG")
+SLACK_THREAD_TS=$(echo "$SLACK_RESP" | jq -r '.ts // empty')
+
+if [ -n "$SLACK_THREAD_TS" ]; then
+  multica issue comment add "$FIXER_ISSUE_ID" \
+    --content "<!-- slack-thread-ts: ${SLACK_THREAD_TS} -->"
+fi
+```
+
+The `slack_post` helper in `slack-templates.md` falls back to a plain webhook post
+when the bot token is missing — the Fixer/Verifier will simply post new top-level
+messages instead of thread replies in that case.
 
 ### 9. Close out
 
