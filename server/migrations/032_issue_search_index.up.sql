@@ -1,4 +1,4 @@
--- Enable pg_bigm extension for bigram-based full-text search (CJK-friendly).
+-- Enable pg_bigm extension for bigram-based full-text search.
 -- Skips gracefully if pg_bigm is not available (e.g. CI environments).
 DO $$
 BEGIN

@@ -131,14 +131,14 @@ describe("DeleteWorkspaceDialog", () => {
     const onConfirm = vi.fn();
     render(
       <DeleteWorkspaceDialog
-        workspaceName="My 团队 🚀"
+        workspaceName="My équipe 🚀"
         open
         onOpenChange={vi.fn()}
         onConfirm={onConfirm}
       />,
     );
     const input = screen.getByRole("textbox");
-    await user.type(input, "My 团队 🚀");
+    await user.type(input, "My équipe 🚀");
     expect(screen.getByRole("button", { name: "Delete workspace" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Delete workspace" }));
     expect(onConfirm).toHaveBeenCalledTimes(1);

@@ -2,11 +2,11 @@
 --
 -- The frontend's nameToWorkspaceSlug() previously fell back to the literal
 -- string "workspace" when the input name produced no valid slug characters
--- (Chinese / Japanese / emoji / Arabic names all stripped to empty by the
--- /[^a-z0-9]+/g regex). This meant the first non-ASCII-named workspace on
--- any instance silently got slug = "workspace" and (a) showed a confusing
--- /workspace/{view} URL after the URL refactor, (b) blocked subsequent
--- non-ASCII-named workspaces with 409 conflicts on the unique slug index.
+-- after applying the /[^a-z0-9]+/g regex. This meant the first incompatible
+-- workspace name on any instance silently got slug = "workspace" and (a)
+-- showed a confusing /workspace/{view} URL after the URL refactor, (b)
+-- blocked subsequent incompatible workspace names with 409 conflicts on the
+-- unique slug index.
 --
 -- The frontend bug is fixed in
 --   packages/views/workspace/slug.ts (commit d5c9613f)

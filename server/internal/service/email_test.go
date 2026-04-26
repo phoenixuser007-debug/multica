@@ -7,7 +7,7 @@ import (
 
 func TestSanitizeSubjectField(t *testing.T) {
 	long := strings.Repeat("a", 100)
-	longRunes := strings.Repeat("深", 100)
+	longRunes := strings.Repeat("é", 100)
 
 	tests := []struct {
 		name string
@@ -19,10 +19,10 @@ func TestSanitizeSubjectField(t *testing.T) {
 		{"strips crlf header-style", "Acme\r\nBcc: evil@example.com", "AcmeBcc: evil@example.com"},
 		{"strips tab", "Acme\tTeam", "AcmeTeam"},
 		{"strips unicode control", "Acme\x07Beep", "AcmeBeep"},
-		{"preserves non-ascii", "深度学习工作区", "深度学习工作区"},
+		{"preserves non-ascii", "Café équipe", "Café équipe"},
 		{"preserves emoji", "Team 🚀", "Team 🚀"},
 		{"truncates long ascii", long, strings.Repeat("a", maxSubjectFieldRunes-1) + "…"},
-		{"truncates rune-aware", longRunes, strings.Repeat("深", maxSubjectFieldRunes-1) + "…"},
+		{"truncates rune-aware", longRunes, strings.Repeat("é", maxSubjectFieldRunes-1) + "…"},
 		{"empty stays empty", "", ""},
 	}
 	for _, tt := range tests {

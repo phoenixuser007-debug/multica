@@ -14,7 +14,7 @@
 -- set already had live prod workspaces:
 --
 --   * `home`       (68a982da-68a7-4e2e-ac8e-45a0323507f3) — zzlye, 2026-04-14
---   * `dashboard`  (ea5a332f-06f9-480d-ab81-8f2324c92d80) — 王争,  2026-04-22
+--   * `dashboard`  (ea5a332f-06f9-480d-ab81-8f2324c92d80), 2026-04-22
 --
 -- Decision on MUL-961: force-rename both via this migration (scheme 1), same
 -- playbook as MUL-972 for admin/multica/new/www. Rename targets `home-1`
@@ -24,8 +24,8 @@
 -- workspace creation — the reserved-slug check in app code lands in the
 -- same deploy, but the migration runs first).
 --
--- Owner outreach: zzlye@ and 王争@ should be notified that their
--- workspace URL prefix changed (/home → /home-1, /dashboard → /dashboard-1).
+-- Owner outreach: affected workspace owners should be notified that their
+-- workspace URL prefix changed (/home -> /home-1, /dashboard -> /dashboard-1).
 --
 -- Keep this slug list aligned with:
 --  - server/internal/handler/workspace_reserved_slugs.go

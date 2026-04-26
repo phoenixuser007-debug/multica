@@ -19,10 +19,10 @@ describe("nameToWorkspaceSlug", () => {
   });
 
   // Regression: previously fell back to literal "workspace" — caused two
-  // separate non-ASCII-named workspaces on the same instance to 409 (slug
+  // separate non-ASCII-only workspaces on the same instance to 409 (slug
   // taken) and silently surfaced a confusing "/workspace/issues" URL.
   it("returns empty string for non-ASCII-only names", () => {
-    expect(nameToWorkspaceSlug("测试")).toBe("");
+    expect(nameToWorkspaceSlug("áéí")).toBe("");
     expect(nameToWorkspaceSlug("こんにちは")).toBe("");
     expect(nameToWorkspaceSlug("🚀")).toBe("");
     expect(nameToWorkspaceSlug("مرحبا")).toBe("");
@@ -35,7 +35,7 @@ describe("nameToWorkspaceSlug", () => {
   });
 
   it("preserves ASCII characters even when mixed with non-ASCII", () => {
-    expect(nameToWorkspaceSlug("测试 Team")).toBe("team");
-    expect(nameToWorkspaceSlug("Project 测试 1")).toBe("project-1");
+    expect(nameToWorkspaceSlug("こんにちは Team")).toBe("team");
+    expect(nameToWorkspaceSlug("Project café 1")).toBe("project-caf-1");
   });
 });

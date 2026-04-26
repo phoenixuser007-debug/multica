@@ -132,7 +132,7 @@ func TestBuildPromptCommentTriggered(t *testing.T) {
 
 	issueID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 	commentID := "c1c2c3c4-d5d6-7890-abcd-ef1234567890"
-	commentContent := "请把报告翻译成英文"
+	commentContent := "Please translate the report to English"
 
 	prompt := BuildPrompt(Task{
 		IssueID:               issueID,

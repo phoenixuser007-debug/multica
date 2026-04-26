@@ -126,7 +126,7 @@ type SearchIssueResponse struct {
 
 // extractSnippet extracts a snippet of text around the first occurrence of query.
 // Returns up to ~120 runes centered on the match. Uses rune-based slicing to
-// avoid splitting multi-byte UTF-8 characters (important for CJK content).
+// avoid splitting multi-byte UTF-8 characters.
 func extractSnippet(content, query string) string {
 	runes := []rune(content)
 	lowerRunes := []rune(strings.ToLower(content))

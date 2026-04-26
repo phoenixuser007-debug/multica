@@ -1,57 +1,56 @@
 import { describe, expect, it } from "vitest";
 import { preprocessLinks } from "@multica/ui/markdown/linkify";
 
-// The bug: linkify-it does not treat CJK full-width punctuation as a URL
-// boundary, so the href can swallow trailing punctuation and the Chinese
-// characters that follow it (up to the next space). The fix truncates the
-// detected URL at the first CJK full-width punctuation character.
+// The bug: linkify-it does not treat full-width punctuation as a URL boundary,
+// so the href can swallow trailing punctuation and later text. The fix
+// truncates the detected URL at the first full-width punctuation character.
 
-describe("preprocessLinks — CJK punctuation boundary", () => {
+describe("preprocessLinks — full-width punctuation boundary", () => {
   it("stops URL at ideographic full stop 。", () => {
-    const out = preprocessLinks("见 https://example.com/path。然后继续");
-    expect(out).toBe("见 [https://example.com/path](https://example.com/path)。然后继续");
+    const out = preprocessLinks("see https://example.com/path。then continue");
+    expect(out).toBe("see [https://example.com/path](https://example.com/path)。then continue");
   });
 
   it("stops URL at fullwidth comma ，", () => {
-    const out = preprocessLinks("打开 https://example.com/a，以及其他");
-    expect(out).toBe("打开 [https://example.com/a](https://example.com/a)，以及其他");
+    const out = preprocessLinks("open https://example.com/a，and more");
+    expect(out).toBe("open [https://example.com/a](https://example.com/a)，and more");
   });
 
   it("stops URL at ideographic comma 、", () => {
-    const out = preprocessLinks("两个地址 https://a.com/x、https://b.com/y");
+    const out = preprocessLinks("two links https://a.com/x、https://b.com/y");
     expect(out).toBe(
-      "两个地址 [https://a.com/x](https://a.com/x)、[https://b.com/y](https://b.com/y)",
+      "two links [https://a.com/x](https://a.com/x)、[https://b.com/y](https://b.com/y)",
     );
   });
 
   it("stops URL at fullwidth right paren ）", () => {
-    const out = preprocessLinks("（见 https://example.com/x）后文");
-    expect(out).toBe("（见 [https://example.com/x](https://example.com/x)）后文");
+    const out = preprocessLinks("（see https://example.com/x）after");
+    expect(out).toBe("（see [https://example.com/x](https://example.com/x)）after");
   });
 
   it("stops URL at corner bracket 」", () => {
-    const out = preprocessLinks("「https://example.com/a」后文");
-    expect(out).toBe("「[https://example.com/a](https://example.com/a)」后文");
+    const out = preprocessLinks("「https://example.com/a」after");
+    expect(out).toBe("「[https://example.com/a](https://example.com/a)」after");
   });
 
   it("stops URL at fullwidth exclamation ！", () => {
-    const out = preprocessLinks("太好了 https://example.com/x！继续");
-    expect(out).toBe("太好了 [https://example.com/x](https://example.com/x)！继续");
+    const out = preprocessLinks("great https://example.com/x！continue");
+    expect(out).toBe("great [https://example.com/x](https://example.com/x)！continue");
   });
 
   it("handles the original bug report (PR link then 。 then more text)", () => {
     const out = preprocessLinks(
-      "已合并 PR #1623：https://github.com/multica-ai/multica/pull/1623。merge commit",
+      "Merged PR #1623: https://github.com/multica-ai/multica/pull/1623。merge commit",
     );
     expect(out).toBe(
-      "已合并 PR #1623：[https://github.com/multica-ai/multica/pull/1623](https://github.com/multica-ai/multica/pull/1623)。merge commit",
+      "Merged PR #1623: [https://github.com/multica-ai/multica/pull/1623](https://github.com/multica-ai/multica/pull/1623)。merge commit",
     );
   });
 
   it("does not swallow the entire remainder when there is no trailing space", () => {
-    const out = preprocessLinks("https://github.com/x/y/issues/1619。我接下来把这个");
+    const out = preprocessLinks("https://github.com/x/y/issues/1619。next");
     expect(out).toBe(
-      "[https://github.com/x/y/issues/1619](https://github.com/x/y/issues/1619)。我接下来把这个",
+      "[https://github.com/x/y/issues/1619](https://github.com/x/y/issues/1619)。next",
     );
   });
 
@@ -65,16 +64,16 @@ describe("preprocessLinks — CJK punctuation boundary", () => {
     expect(out).toBe("go [https://example.com/path](https://example.com/path)");
   });
 
-  it("preserves CJK letters inside URL path (only trims on punctuation)", () => {
-    const out = preprocessLinks("https://zh.wikipedia.org/wiki/中国 参考");
+  it("preserves non-ASCII letters inside URL path (only trims on punctuation)", () => {
+    const out = preprocessLinks("https://example.com/wiki/かな note");
     expect(out).toBe(
-      "[https://zh.wikipedia.org/wiki/中国](https://zh.wikipedia.org/wiki/中国) 参考",
+      "[https://example.com/wiki/かな](https://example.com/wiki/かな) note",
     );
   });
 
   it("does not re-link an already-linked URL that contains 。", () => {
     // If a user or upstream already wrote [text](url。), we leave it alone.
-    const input = "见 [link](https://example.com/x。)后文";
+    const input = "see [link](https://example.com/x。)after";
     expect(preprocessLinks(input)).toBe(input);
   });
 });

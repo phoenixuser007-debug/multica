@@ -21,9 +21,9 @@ export function createSubmitExtension(
       if (submitOnEnter) {
         shortcuts.Enter = () => {
           const editor = this.editor;
-          // IME guard — never submit while composing a multi-key input
-          // (Chinese pinyin, Japanese kana, etc). `view.composing` is set
-          // by ProseMirror between compositionstart and compositionend.
+          // IME guard: never submit while composing a multi-key input.
+          // `view.composing` is set by ProseMirror between compositionstart
+          // and compositionend.
           if (editor.view.composing) return false;
           // Let Enter insert a newline inside a code block.
           if (editor.isActive("codeBlock")) return false;
