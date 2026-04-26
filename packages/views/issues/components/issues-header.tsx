@@ -12,6 +12,7 @@ import {
   FolderKanban,
   FolderMinus,
   List,
+  Shield,
   SignalHigh,
   SlidersHorizontal,
   User,
@@ -62,6 +63,7 @@ import {
 } from "@multica/core/issues/stores/issues-scope-store";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
 import type { Issue } from "@multica/core/types";
+import { useModalStore } from "@multica/core/modals";
 
 // ---------------------------------------------------------------------------
 // HoverCheck — shadcn official pattern (PR #6862)
@@ -397,6 +399,8 @@ export function IssuesHeader({ scopedIssues }: { scopedIssues: Issue[] }) {
   const cardProperties = useViewStore((s) => s.cardProperties);
   const act = useViewStoreApi().getState();
 
+  const openModal = useModalStore((s) => s.open);
+
   const counts = useIssueCounts(scopedIssues);
 
   const hasActiveFilters =
@@ -442,6 +446,23 @@ export function IssuesHeader({ scopedIssues }: { scopedIssues: Issue[] }) {
 
       {/* Right: filter + display + view toggle */}
       <div className="flex items-center gap-1">
+        {/* CVE Remediation */}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="icon-sm"
+                className="text-muted-foreground"
+                onClick={() => openModal("cve-remediation")}
+              >
+                <Shield className="size-4" />
+              </Button>
+            }
+          />
+          <TooltipContent side="bottom">CVE scan &amp; remediation</TooltipContent>
+        </Tooltip>
+
         {/* Filter */}
         <DropdownMenu>
           <Tooltip>

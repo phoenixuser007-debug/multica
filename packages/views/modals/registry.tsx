@@ -9,6 +9,7 @@ import { SetParentIssueModal } from "./set-parent-issue";
 import { AddChildIssueModal } from "./add-child-issue";
 import { DeleteIssueConfirmModal } from "./delete-issue-confirm";
 import { BacklogAgentHintModal } from "./backlog-agent-hint";
+import { CVERemediationModal } from "./cve-remediation";
 
 export function ModalRegistry() {
   const modal = useModalStore((s) => s.modal);
@@ -32,6 +33,8 @@ export function ModalRegistry() {
       return <DeleteIssueConfirmModal onClose={close} data={data} />;
     case "issue-backlog-agent-hint":
       return <BacklogAgentHintModal onClose={close} data={data} />;
+    case "cve-remediation":
+      return <CVERemediationModal open onClose={close} />;
     default:
       return null;
   }

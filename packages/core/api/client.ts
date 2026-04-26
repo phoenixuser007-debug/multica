@@ -701,6 +701,35 @@ export class ApiClient {
     return this.fetch("/api/inbox/archive-completed", { method: "POST" });
   }
 
+  // CVE Remediation
+  async getReposStatus(): Promise<Array<{ name: string; present: boolean; path: string }>> {
+    return this.fetch("/api/repos/status");
+  }
+
+  async cloneRepos(repos: string[]): Promise<{ cloned: string[]; failed: Record<string, string> }> {
+    return this.fetch("/api/repos/clone", {
+      method: "POST",
+      body: JSON.stringify({ repos }),
+    });
+  }
+
+  async createCVEJiraTickets(repos: string[]): Promise<{
+    repos: Array<{
+      repo: string;
+      component: string;
+      story_key: string;
+      subtask_key: string;
+      subtask_url: string;
+      existing: boolean;
+    }>;
+    errors: Record<string, string>;
+  }> {
+    return this.fetch("/api/jira/cve-tickets", {
+      method: "POST",
+      body: JSON.stringify({ repos }),
+    });
+  }
+
   // App Config
   async getConfig(): Promise<{
     cdn_domain: string;

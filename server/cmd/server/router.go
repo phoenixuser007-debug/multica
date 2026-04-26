@@ -418,6 +418,11 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, analytics
 				r.Post("/{id}/read", h.MarkInboxRead)
 				r.Post("/{id}/archive", h.ArchiveInboxItem)
 			})
+
+			// CVE remediation: repo presence/clone + Jira ticket creation
+			r.Get("/api/repos/status", h.GetReposStatus)
+			r.Post("/api/repos/clone", h.CloneRepos)
+			r.Post("/api/jira/cve-tickets", h.CreateCVEJiraTickets)
 		})
 	})
 

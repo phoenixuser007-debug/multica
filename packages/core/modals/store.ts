@@ -11,6 +11,7 @@ type ModalType =
   | "issue-add-child"
   | "issue-delete-confirm"
   | "issue-backlog-agent-hint"
+  | "cve-remediation"
   | null;
 
 interface ModalStore {
