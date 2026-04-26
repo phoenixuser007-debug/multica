@@ -41,7 +41,7 @@ func TestSanitizeName(t *testing.T) {
 		{"a-very-long-name-that-exceeds-thirty-characters-total", "a-very-long-name-that-exceeds"},
 		{"", "agent"},
 		{"---", "agent"},
-		{"日本語テスト", "agent"},
+		{"こんにちは", "agent"},
 	}
 	for _, tt := range tests {
 		if got := sanitizeName(tt.input); got != tt.want {
@@ -264,6 +264,36 @@ func TestWriteContextFilesOmitsSkillsWhenEmpty(t *testing.T) {
 	}
 	if strings.Contains(s, "## Agent Skills") {
 		t.Error("expected skills section to be omitted when no skills")
+	}
+}
+
+func TestWriteContextFilesPiUsesProjectSkillsPath(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	ctx := TaskContextForEnv{
+		IssueID: "pi-issue-id",
+		AgentSkills: []SkillContextForEnv{
+			{Name: "Pi Helper", Content: "Use current Pi skill layout."},
+		},
+	}
+
+	if err := writeContextFiles(dir, "pi", ctx); err != nil {
+		t.Fatalf("writeContextFiles failed: %v", err)
+	}
+
+	skillPath := filepath.Join(dir, ".pi", "skills", "pi-helper", "SKILL.md")
+	content, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("expected Pi skill at %s: %v", skillPath, err)
+	}
+	if !strings.Contains(string(content), "Use current Pi skill layout.") {
+		t.Fatalf("Pi skill content missing: %q", string(content))
+	}
+
+	legacyPath := filepath.Join(dir, ".pi", "agent", "skills", "pi-helper", "SKILL.md")
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy Pi skill path should not be written: %s", legacyPath)
 	}
 }
 

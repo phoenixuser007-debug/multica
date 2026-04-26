@@ -22,7 +22,7 @@ For guidance on picking a tool when creating an agent, see [Creating and configu
 | **Kimi** | Moonshot | ✅ | ❌ | `.kimi/skills/` | Dynamic discovery |
 | **OpenCode** | SST | ✅ | ❌ | `.config/opencode/skills/` | Dynamic discovery |
 | **OpenClaw** | Open source | ✅ | ❌ | `.agent_context/skills/` (fallback) | Bound to the agent, can't be switched per task |
-| **Pi** | Inflection AI | ✅ (session is a file path) | ❌ | `.pi/agent/skills/` | Dynamic discovery |
+| **Pi** | badlogic / Mario Zechner | ✅ (session is a file path) | ❌ | `.pi/skills/` | Dynamic discovery |
 
 ## What each tool is for
 
@@ -52,7 +52,7 @@ From Nous Research. Uses the ACP protocol (shares a transport with Kimi). Sessio
 
 ### Kimi
 
-From Moonshot, aimed at the Chinese market. Shares the ACP protocol with Hermes, but the skill path `.kimi/skills/` is Kimi CLI's native discovery mechanism — different from Hermes's fallback.
+From Moonshot. Shares the ACP protocol with Hermes, but the skill path `.kimi/skills/` is Kimi CLI's native discovery mechanism — different from Hermes's fallback.
 
 ### OpenCode
 
@@ -64,7 +64,7 @@ Open-source project, a CLI agent orchestrator. **Model is bound at the agent lay
 
 ### Pi
 
-From Inflection AI, minimalist. **Session resumption is unusual** — the session ID is a file path on disk (`~/.pi/...`) rather than a string ID. In other tools, the resume id is a string returned by the CLI; in Pi, the resume id is the session file itself.
+From badlogic's [`@mariozechner/pi-coding-agent`](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent), a minimal terminal coding harness. **Session resumption is unusual** — the session ID is a file path on disk (`~/.pi/...`) rather than a string ID. In other tools, the resume id is a string returned by the CLI; in Pi, the resume id is the session file itself.
 
 ## Session resumption: who really supports it
 
@@ -98,7 +98,7 @@ Each tool uses **its own** skill discovery path. Before a task runs, the Multica
 | Cursor | `.cursor/skills/` | ✅ Native |
 | Kimi | `.kimi/skills/` | ✅ Native |
 | OpenCode | `.config/opencode/skills/` | ✅ Native |
-| Pi | `.pi/agent/skills/` | ✅ Native |
+| Pi | `.pi/skills/` | ✅ Native |
 | Gemini | `.agent_context/skills/` | ⚠️ Generic fallback |
 | Hermes | `.agent_context/skills/` | ⚠️ Generic fallback |
 | OpenClaw | `.agent_context/skills/` | ⚠️ Generic fallback |
