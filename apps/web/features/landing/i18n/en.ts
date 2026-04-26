@@ -419,7 +419,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Create Agent dialog shows runtime owner with Mine/All filter",
         ],
         improvements: [
-          "Inter font with CJK fallback and automatic CJK+Latin spacing",
+          "Inter font stack with refined spacing for mixed scripts",
           "Sidebar user menu redesigned as full-row popover",
           "WebSocket ping/pong heartbeat to detect dead connections",
           "Members can now create agents and manage their own skills",
@@ -683,7 +683,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "My Issues & i18n",
         changes: [
           "My Issues page with kanban board, list view, and scope tabs",
-          "Simplified Chinese localization for the landing page",
+          "English-only landing copy and streamlined locale handling",
           "About and Changelog pages for the marketing site",
           "Agent avatar upload in settings",
           "Attachment support for CLI comments and issue/comment APIs",

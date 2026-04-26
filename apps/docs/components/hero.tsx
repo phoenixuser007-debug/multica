@@ -5,8 +5,7 @@ import type { ReactNode } from "react";
  * DocsHero — editorial showpiece header for landing-style pages.
  *
  * Escapes prose scope to run its own type scale. Title accepts ReactNode so
- * callers can pass <em> spans for brand-color emphasis (italic is avoided —
- * Chinese italic is a synthetic slant and reads as broken).
+ * callers can pass <em> spans for brand-color emphasis.
  */
 export function DocsHero({
   eyebrow,

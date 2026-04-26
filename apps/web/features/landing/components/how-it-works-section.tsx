@@ -6,7 +6,7 @@ import { useLocale } from "../i18n";
 import { GitHubMark, githubUrl, heroButtonClassName } from "./shared";
 
 export function HowItWorksSection() {
-  const { t, locale } = useLocale();
+  const { t } = useLocale();
   const user = useAuthStore((s) => s.user);
 
   return (
@@ -45,7 +45,7 @@ export function HowItWorksSection() {
             {user ? t.header.dashboard : t.howItWorks.cta}
           </Link>
           <Link
-            href={locale === "zh" ? "/docs/zh" : "/docs"}
+            href="/docs"
             className={heroButtonClassName("ghost")}
           >
             {t.howItWorks.ctaDocs}

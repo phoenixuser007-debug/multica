@@ -9,7 +9,7 @@ export const DOCS_BASE_PATH = "/docs";
 
 /**
  * Build an absolute URL for a docs page from its Fumadocs-relative url
- * (e.g. "/agents" or "/zh/agents"). The home page comes through as "/",
+ * (e.g. "/agents"). The home page comes through as "/",
  * which would naively serialize to ".../docs/" with a trailing slash —
  * Next serves the home at ".../docs" (no trailing), so we strip the lone
  * slash to keep the sitemap entry and the page's own canonical link byte-

@@ -1,23 +1,17 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useMemo } from "react";
+import { createContext, useContext, useMemo } from "react";
 import { useConfigStore } from "@multica/core/config";
 import { createEnDict } from "./en";
-import { createZhDict } from "./zh";
 import type { LandingDict, Locale } from "./types";
 
 const dictionaryFactories: Record<Locale, (allowSignup: boolean) => LandingDict> = {
   en: createEnDict,
-  zh: createZhDict,
 };
-
-const COOKIE_NAME = "multica-locale";
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
 
 type LocaleContextValue = {
   locale: Locale;
   t: LandingDict;
-  setLocale: (locale: Locale) => void;
 };
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
@@ -29,21 +23,16 @@ export function LocaleProvider({
   children: React.ReactNode;
   initialLocale?: Locale;
 }) {
-  const [locale, setLocaleState] = useState<Locale>(initialLocale);
+  const locale = initialLocale;
   const allowSignup = useConfigStore((state) => state.allowSignup);
   const t = useMemo(
     () => dictionaryFactories[locale](allowSignup),
     [allowSignup, locale],
   );
 
-  const setLocale = useCallback((l: Locale) => {
-    setLocaleState(l);
-    document.cookie = `${COOKIE_NAME}=${l}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
-  }, []);
-
   return (
     <LocaleContext.Provider
-      value={{ locale, t, setLocale }}
+      value={{ locale, t }}
     >
       {children}
     </LocaleContext.Provider>

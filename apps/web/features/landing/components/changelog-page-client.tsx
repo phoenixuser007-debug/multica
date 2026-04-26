@@ -10,7 +10,6 @@ import {
 import { LandingHeader } from "./landing-header";
 import { LandingFooter } from "./landing-footer";
 import { useLocale } from "../i18n";
-import type { Locale } from "../i18n/types";
 
 const MONTHS_EN = [
   "January",
@@ -38,16 +37,14 @@ function parseDate(dateStr: string): ParsedDate {
   };
 }
 
-function monthYearLabel(year: number, month: number, locale: Locale) {
+function monthYearLabel(year: number, month: number) {
   if (!year || !month) return "";
-  if (locale === "zh") return `${year}\u5e74${month}\u6708`;
   return `${MONTHS_EN[month - 1]} ${year}`;
 }
 
-function fullDateLabel(dateStr: string, locale: Locale) {
+function fullDateLabel(dateStr: string) {
   const { year, month, day } = parseDate(dateStr);
   if (!year || !month || !day) return dateStr;
-  if (locale === "zh") return `${year}\u5e74${month}\u6708${day}\u65e5`;
   return `${MONTHS_EN[month - 1]} ${day}, ${year}`;
 }
 
@@ -104,7 +101,7 @@ function ChangeList({ items }: { items: string[] }) {
 }
 
 export function ChangelogPageClient() {
-  const { t, locale } = useLocale();
+  const { t } = useLocale();
   const categoryLabels = t.changelog.categories;
   const entries = t.changelog.entries;
   const groups = useMemo(() => groupByMonth(entries), [entries]);
@@ -198,7 +195,7 @@ export function ChangelogPageClient() {
                     {groups.map((group) => (
                       <li key={group.key}>
                         <p className="ml-6 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#0a0d12]/45">
-                          {monthYearLabel(group.year, group.month, locale)}
+                          {monthYearLabel(group.year, group.month)}
                         </p>
 
                         <ol className="mt-1.5">
@@ -277,7 +274,7 @@ export function ChangelogPageClient() {
                           v{release.version}
                         </span>
                         <span className="text-[13px] text-[#0a0d12]/40">
-                          {fullDateLabel(release.date, locale)}
+                          {fullDateLabel(release.date)}
                         </span>
                       </div>
                       <h2 className="mt-2 text-[20px] font-semibold leading-snug sm:text-[22px]">

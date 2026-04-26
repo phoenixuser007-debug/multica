@@ -1,10 +1,9 @@
-export type Locale = "en" | "zh";
+export type Locale = "en";
 
-export const locales: Locale[] = ["en", "zh"];
+export const locales: Locale[] = ["en"];
 
 export const localeLabels: Record<Locale, string> = {
   en: "EN",
-  zh: "\u4e2d\u6587",
 };
 
 type FeatureSection = {

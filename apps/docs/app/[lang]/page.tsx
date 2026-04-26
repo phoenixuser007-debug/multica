@@ -15,10 +15,8 @@ function asLang(lang: string): Lang {
     : (i18n.defaultLanguage as Lang);
 }
 
-// A layout's `generateStaticParams` does NOT cascade — every page that
-// wants SSG must declare its own. Without this, both `/docs/` and
-// `/docs/zh` (the busiest URLs on the site) render dynamically on every
-// request.
+// A layout's `generateStaticParams` does NOT cascade; every page that wants
+// SSG must declare its own.
 export function generateStaticParams() {
   return i18n.languages.map((lang) => ({ lang }));
 }

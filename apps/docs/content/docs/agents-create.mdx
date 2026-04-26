@@ -74,13 +74,13 @@ System-critical variables cannot be overridden: `PATH`, `HOME`, `USER`, `SHELL`,
 **Custom CLI arguments** (`custom_args`) is a string array appended one-by-one to the AI coding tool's command line:
 
 ```json
-["--max-turns", "100", "--append-system-prompt", "always respond in Chinese"]
+["--max-turns", "100", "--append-system-prompt", "keep replies concise"]
 ```
 
 The final command comes out as:
 
 ```bash
-claude --model <model> --max-turns 100 --append-system-prompt "always respond in Chinese" [...]
+claude --model <model> --max-turns 100 --append-system-prompt "keep replies concise" [...]
 ```
 
 Arguments are passed as-is, not through a shell (no injection risk), but whether a given flag is recognized is up to the AI coding tool itself — tools differ substantially here.

@@ -143,18 +143,16 @@
 /* ---------------------------------------------------------------------------
  * Editorial typography
  *
- * Body keeps Inter for legibility (especially CJK where serif Latin clashes
- * with sans CJK). Headings switch to Source Serif 4 for the editorial
- * signature. Italic is intentionally avoided — Chinese italic is a CSS
- * synthetic slant against upright-designed glyphs and reads as broken.
- * Emphasis is carried by serif/sans contrast, brand color, and weight.
+ * Body keeps Inter for legibility. Headings switch to Source Serif 4 for the
+ * editorial signature. Italic is intentionally avoided sitewide so emphasis is
+ * carried by serif/sans contrast, brand color, and weight.
  *
  * Sizing:
  *   - DocsHero h1 (welcome page only): 44px serif, brand-color em accent
  *   - prose h1 (guide / reference pages): 30px serif
  *   - prose h2: 26px serif (no italic)
  *   - prose h3: 13px sans uppercase label
- *   - body: 15.5px (kept from previous build — proven reading size for CN)
+ *   - body: 15.5px
  * ------------------------------------------------------------------------- */
 
 article:has(.prose),
@@ -212,10 +210,10 @@ article > p.text-lg {
   margin-bottom: 0.5em;
   color: var(--foreground);
 }
-/* Italic is avoided sitewide (Chinese italic = synthetic slant, looks broken).
- * Force any italicized element to non-italic in prose. Tailwind Typography
- * defaults blockquote to italic; we also undo it here. Emphasis is carried
- * by brand color + font-weight in headings, foreground+weight in body. */
+/* Italic is avoided sitewide. Force any italicized element to non-italic in
+ * prose. Tailwind Typography defaults blockquote to italic; we also undo it
+ * here. Emphasis is carried by brand color + font-weight in headings,
+ * foreground+weight in body. */
 .prose em,
 .prose i,
 .prose cite,

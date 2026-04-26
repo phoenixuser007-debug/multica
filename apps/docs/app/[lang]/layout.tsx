@@ -8,7 +8,7 @@ import { cn } from "@multica/ui/lib/utils";
 import { baseOptions } from "@/app/layout.config";
 import { source } from "@/lib/source";
 import { i18n, type Lang } from "@/lib/i18n";
-import { uiTranslations, localeLabels } from "@/lib/translations";
+import { uiTranslations } from "@/lib/translations";
 import { DocsSettings } from "@/components/docs-settings";
 
 const inter = Inter({
@@ -18,9 +18,6 @@ const inter = Inter({
     "-apple-system",
     "BlinkMacSystemFont",
     "Segoe UI",
-    "PingFang SC",
-    "Microsoft YaHei",
-    "Noto Sans CJK SC",
     "sans-serif",
   ],
 });
@@ -31,10 +28,9 @@ const geistMono = Geist_Mono({
   fallback: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
 });
 
-// Editorial serif used for headings and showpiece elements. Italic style is
-// deliberately NOT loaded — italic in CJK is a synthetic slant that breaks
-// glyph design. Emphasis in docs is carried by brand color + weight, never
-// font-style. Mirrors apps/web/app/layout.tsx for the upright family.
+// Editorial serif used for headings and showpiece elements. Emphasis in docs
+// is carried by brand color + weight, never font-style. Mirrors
+// apps/web/app/layout.tsx for the upright family.
 const sourceSerif = Source_Serif_4({
   subsets: ["latin"],
   style: ["normal"],
@@ -73,10 +69,6 @@ export default async function Layout({
   const lang = (i18n.languages as readonly string[]).includes(rawLang)
     ? (rawLang as Lang)
     : (i18n.defaultLanguage as Lang);
-  const locales = i18n.languages.map((l) => ({
-    locale: l,
-    name: localeLabels[l],
-  }));
 
   return (
     <html
@@ -93,7 +85,6 @@ export default async function Layout({
         <RootProvider
           i18n={{
             locale: lang,
-            locales,
             translations: uiTranslations[lang],
           }}
           search={{ options: { api: "/docs/api/search" } }}
@@ -106,7 +97,7 @@ export default async function Layout({
             // icons.
             themeSwitch={{ enabled: false }}
             searchToggle={{ enabled: false }}
-            sidebar={{ footer: <DocsSettings locale={lang} /> }}
+            sidebar={{ footer: <DocsSettings /> }}
             {...baseOptions}
           >
             {children}
