@@ -229,7 +229,7 @@ function WelcomeIllustration() {
       />
       <MockActivityCard
         className="translate-x-8 rotate-[1.6deg]"
-        actor={{ kind: "agent", name: "Research Agent", provider: "hermes" }}
+        actor={{ kind: "agent", name: "Research Agent", provider: "kimi" }}
         issueId="MCA-38"
         content="This week's user interviews summarized — 12 calls, 4 recurring themes, 3 pull-quotes."
         status="done"
@@ -237,7 +237,7 @@ function WelcomeIllustration() {
       />
       <MockActivityCard
         className="-translate-x-6 -rotate-[0.8deg]"
-        actor={{ kind: "agent", name: "Review Agent", provider: "openclaw" }}
+        actor={{ kind: "agent", name: "Review Agent", provider: "opencode" }}
         issueId="MCA-42"
         content="Reviewed Monday's draft — left 4 notes on tone. Standing by for the new one."
         status="in_review"
@@ -263,8 +263,7 @@ type ProviderName =
   | "claude"
   | "codex"
   | "opencode"
-  | "openclaw"
-  | "hermes"
+  | "kimi"
   | "pi"
   | "copilot"
   | "cursor";

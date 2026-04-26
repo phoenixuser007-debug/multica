@@ -2,7 +2,6 @@ package agent
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,7 +18,7 @@ import (
 // `provider/model` form (e.g. "openai/gpt-4o" from opencode).
 // Default is a *display* hint: the UI badges the entry the
 // runtime advertises as its preferred pick (e.g. Claude Code's
-// shipped default, or hermes' currentModelId). It has no effect
+// shipped default or an ACP runtime's current model). It has no effect
 // at execution time — when agent.model is empty the daemon passes
 // "" to the backend so each provider's own CLI resolves its own
 // default, which is always closer to what the user's account /
@@ -47,8 +46,8 @@ const modelCacheTTL = 60 * time.Second
 
 // ListModels returns the models supported by the given agent provider.
 // For providers with a known static catalog it returns the baked-in
-// list; for providers with a CLI discovery mechanism (opencode, pi,
-// openclaw) it shells out with caching and falls back to the static
+// list; for providers with a CLI discovery mechanism (opencode, pi)
+// it shells out with caching and falls back to the static
 // list on failure.
 //
 // executablePath lets the caller point at a non-default binary; pass
@@ -67,10 +66,6 @@ func ListModels(ctx context.Context, providerType, executablePath string) ([]Mod
 		})
 	case "copilot":
 		return copilotStaticModels(), nil
-	case "hermes":
-		return cachedDiscovery(providerType, func() ([]Model, error) {
-			return discoverHermesModels(ctx, executablePath)
-		})
 	case "kimi":
 		return cachedDiscovery(providerType, func() ([]Model, error) {
 			return discoverKimiModels(ctx, executablePath)
@@ -83,10 +78,6 @@ func ListModels(ctx context.Context, providerType, executablePath string) ([]Mod
 		return cachedDiscovery(providerType, func() ([]Model, error) {
 			return discoverPiModels(ctx, executablePath)
 		})
-	case "openclaw":
-		return cachedDiscovery(providerType, func() ([]Model, error) {
-			return discoverOpenclawAgents(ctx, executablePath)
-		})
 	default:
 		return nil, fmt.Errorf("unknown agent type: %q", providerType)
 	}
@@ -94,8 +85,8 @@ func ListModels(ctx context.Context, providerType, executablePath string) ([]Mod
 
 // ModelSelectionSupported reports whether setting `agent.model` has
 // any effect for the given provider. Today every provider in the
-// registry honours `opts.Model` end-to-end: Hermes routes it through
-// the ACP `session/set_model` RPC before each prompt, which means
+// registry honours `opts.Model` end-to-end. ACP runtimes route it through
+// the `session/set_model` RPC before each prompt, which means
 // the UI's dropdown choice is carried all the way down to the LLM
 // call. The helper is retained so we can add a `return false` branch
 // the next time a provider legitimately ignores model selection.
@@ -329,30 +320,9 @@ func parsePiModels(output string) []Model {
 	return models
 }
 
-// discoverHermesModels spins up a throwaway `hermes acp` process,
-// drives just enough of the protocol to receive the model list
-// advertised in the `session/new` response, and shuts it down. The
-// list and the `current` flag both come from hermes' own
-// `_build_model_state` so whatever ~/.hermes/config.yaml resolves
-// to at runtime is exactly what the UI shows.
-//
-// Failure modes (hermes missing, no credentials, config resolution
-// error) all return an empty list so the UI falls back to the
-// creatable manual-entry input instead of blocking the form.
-func discoverHermesModels(ctx context.Context, executablePath string) ([]Model, error) {
-	return discoverACPModels(ctx, executablePath, acpDiscoveryProvider{
-		defaultBin:      "hermes",
-		clientName:      "multica-model-discovery",
-		extraEnv:        []string{"HERMES_YOLO_MODE=1"},
-		tmpdirPrefix:    "multica-hermes-discovery-",
-	})
-}
-
 // discoverKimiModels spins up a throwaway `kimi acp` process and
-// drives the same minimal ACP handshake as Hermes to surface the
-// model catalog advertised by Kimi's `session/new` response. Kimi's
-// ACPServer.new_session returns a `models` block of the same shape
-// (`availableModels`/`currentModelId`) so the parsing path is shared.
+// drives the minimal ACP handshake to surface the model catalog
+// advertised by Kimi's `session/new` response.
 //
 // Failure modes (kimi missing, not logged in, config error) all
 // return an empty list so the UI falls back to manual entry.
@@ -381,8 +351,8 @@ type acpDiscoveryProvider struct {
 // implements the standard `initialize` + `session/new` flow and
 // advertises its model catalog in the response under
 // `models.availableModels` / `models.currentModelId`. This covers
-// Hermes and Kimi today; future ACP backends can plug in by adding
-// an acpDiscoveryProvider entry instead of duplicating the loop.
+// Kimi today; future ACP backends can plug in by adding an
+// acpDiscoveryProvider entry instead of duplicating the loop.
 func discoverACPModels(ctx context.Context, executablePath string, p acpDiscoveryProvider) ([]Model, error) {
 	if executablePath == "" {
 		executablePath = p.defaultBin
@@ -502,8 +472,7 @@ func discoverACPModels(ctx context.Context, executablePath string, p acpDiscover
 }
 
 // parseACPSessionNewModels extracts the model catalog from an ACP
-// `session/new` response. Both Hermes and Kimi (and any other ACP
-// agent that follows the standard schema) emit:
+// `session/new` response. ACP agents that follow the standard schema emit:
 //
 //	{
 //	  "sessionId": "...",
@@ -615,10 +584,10 @@ func parseCursorModels(output string) []Model {
 		}
 		id := strings.TrimSpace(line[:idx])
 		label := strings.TrimSpace(line[idx+3:])
-		if !isOpenclawIdentifier(id) {
-			// Reuse the identifier guard — cursor IDs are in the
-			// same character set (alnum + `-./_`), so anything
-			// that fails it is either malformed or a header line.
+		if !isCLIIdentifier(id) {
+			// Cursor IDs are in this character set (alnum + `-./_`),
+			// so anything that fails it is either malformed or a
+			// header line.
 			continue
 		}
 		if seen[id] {
@@ -644,155 +613,10 @@ func parseCursorModels(output string) []Model {
 	return models
 }
 
-// discoverOpenclawAgents enumerates the pre-registered OpenClaw
-// agents (which is where model selection actually lives in the
-// OpenClaw world — each agent is bound to a model at `agents add`
-// time). It tries structured JSON output first, falling back to a
-// conservative text parser that rejects TUI decoration and section
-// headers. On any ambiguity we return an empty list and let the
-// creatable dropdown handle manual entry — a silently-wrong
-// enumeration would be worse than none.
-func discoverOpenclawAgents(ctx context.Context, executablePath string) ([]Model, error) {
-	if executablePath == "" {
-		executablePath = "openclaw"
-	}
-	if _, err := exec.LookPath(executablePath); err != nil {
-		return []Model{}, nil
-	}
-	runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	// Try JSON modes first. Different openclaw builds expose the
-	// flag under different names; trying a couple is cheap.
-	for _, jsonArgs := range [][]string{
-		{"agents", "list", "--json"},
-		{"agents", "list", "--output", "json"},
-		{"agents", "list", "-o", "json"},
-	} {
-		cmd := exec.CommandContext(runCtx, executablePath, jsonArgs...)
-		hideAgentWindow(cmd)
-		out, err := cmd.Output()
-		if err != nil {
-			continue
-		}
-		if models, ok := parseOpenclawAgentsJSON(out); ok {
-			return models, nil
-		}
-	}
-
-	// Text fallback. Be strict — the default output is a decorated
-	// banner with box-drawing and section headers, and picking up
-	// the wrong tokens produces nonsense entries like "Identity:".
-	cmd := exec.CommandContext(runCtx, executablePath, "agents", "list")
-	hideAgentWindow(cmd)
-	out, err := cmd.Output()
-	if err != nil {
-		return []Model{}, nil
-	}
-	return parseOpenclawAgents(string(out)), nil
-}
-
-// openclawAgentEntry is the shape parseOpenclawAgentsJSON expects
-// from `openclaw agents list --json`. Both `name` and `id` are
-// accepted as the identifier (different openclaw versions ship
-// different field names); `model` is optional and only used to
-// enrich the dropdown label.
-type openclawAgentEntry struct {
-	Name  string `json:"name"`
-	ID    string `json:"id"`
-	Model string `json:"model"`
-}
-
-// parseOpenclawAgentsJSON accepts `openclaw agents list --json`-style
-// output. It handles two common shapes: a top-level array, or an
-// object with an `agents` key whose value is an array. Returns
-// ok=false if the input isn't valid JSON in either shape.
-func parseOpenclawAgentsJSON(raw []byte) ([]Model, bool) {
-	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 {
-		return nil, false
-	}
-
-	var flat []openclawAgentEntry
-	if err := json.Unmarshal(raw, &flat); err == nil {
-		return openclawEntriesToModels(flat), true
-	}
-
-	var wrapped struct {
-		Agents []openclawAgentEntry `json:"agents"`
-	}
-	if err := json.Unmarshal(raw, &wrapped); err == nil && wrapped.Agents != nil {
-		return openclawEntriesToModels(wrapped.Agents), true
-	}
-
-	return nil, false
-}
-
-func openclawEntriesToModels(entries []openclawAgentEntry) []Model {
-	models := make([]Model, 0, len(entries))
-	seen := map[string]bool{}
-	for _, e := range entries {
-		name := e.Name
-		if name == "" {
-			name = e.ID
-		}
-		if name == "" || seen[name] {
-			continue
-		}
-		seen[name] = true
-		label := name
-		if e.Model != "" {
-			label = name + " (" + e.Model + ")"
-		}
-		models = append(models, Model{ID: name, Label: label, Provider: "openclaw"})
-	}
-	return models
-}
-
-// parseOpenclawAgents extracts agent names from the text output of
-// `openclaw agents list`. The default CLI output is a decorated
-// banner — section headers ending in `:`, box-drawing characters,
-// and single-character icons — so we only accept lines that look
-// like a proper `<name> <model>` row: at least two whitespace-
-// separated tokens, both made of safe identifier characters, and
-// neither ending in `:`. Anything else is discarded to avoid
-// surfacing "Identity:" or `◇` as selectable models.
-func parseOpenclawAgents(output string) []Model {
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	var models []Model
-	seen := map[string]bool{}
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		name, model := fields[0], fields[1]
-		if !isOpenclawIdentifier(name) || !isOpenclawIdentifier(model) {
-			continue
-		}
-		if seen[name] {
-			continue
-		}
-		seen[name] = true
-		models = append(models, Model{
-			ID:       name,
-			Label:    name + " (" + model + ")",
-			Provider: "openclaw",
-		})
-	}
-	return models
-}
-
-// isOpenclawIdentifier reports whether s looks like a valid
-// agent-name or model-id token: starts with a letter, contains only
-// identifier-safe characters, and isn't a section header
-// (trailing colon). Rejects TUI decoration like `│`, `╭`, `◇`, `|`.
-func isOpenclawIdentifier(s string) bool {
+// isCLIIdentifier reports whether s looks like a valid agent-name or model-id
+// token: starts with a letter, contains only identifier-safe characters, and
+// isn't a section header.
+func isCLIIdentifier(s string) bool {
 	if s == "" || strings.HasSuffix(s, ":") {
 		return false
 	}

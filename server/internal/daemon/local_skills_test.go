@@ -180,8 +180,8 @@ func TestListRuntimeLocalSkills_DescendsIntoNestedSkillDirs(t *testing.T) {
 	// Top-level skill — should register at key="top" and its child SKILL.md
 	// must NOT register as a separate skill.
 	writeTestLocalSkill(t, root, "top", map[string]string{
-		"SKILL.md":            "---\nname: Top\n---\n",
-		"templates/SKILL.md":  "not a real skill — sub-template that happens to share the filename",
+		"SKILL.md":           "---\nname: Top\n---\n",
+		"templates/SKILL.md": "not a real skill — sub-template that happens to share the filename",
 	})
 
 	// Nested skill — only valid SKILL.md is at depth 2.
@@ -244,29 +244,6 @@ func TestLoadRuntimeLocalSkillBundle_OpenCode(t *testing.T) {
 	}
 	if bundle.SourcePath != "~/.config/opencode/skills/release/reporter" {
 		t.Fatalf("source_path = %q", bundle.SourcePath)
-	}
-}
-
-func TestListRuntimeLocalSkills_OpenClaw(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	writeTestLocalSkill(t, filepath.Join(home, ".openclaw", "skills"), "planner", map[string]string{
-		"SKILL.md": "# Planner\n",
-	})
-
-	skills, supported, err := listRuntimeLocalSkills("openclaw")
-	if err != nil {
-		t.Fatalf("listRuntimeLocalSkills: %v", err)
-	}
-	if !supported {
-		t.Fatal("openclaw should be supported")
-	}
-	if len(skills) != 1 {
-		t.Fatalf("expected 1 skill, got %d", len(skills))
-	}
-	if skills[0].SourcePath != "~/.openclaw/skills/planner" {
-		t.Fatalf("source_path = %q", skills[0].SourcePath)
 	}
 }
 

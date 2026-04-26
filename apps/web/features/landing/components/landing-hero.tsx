@@ -10,7 +10,6 @@ import {
   ClaudeCodeLogo,
   CodexLogo,
   GeminiCliLogo,
-  OpenClawLogo,
   OpenCodeLogo,
   heroButtonClassName,
 } from "./shared";
@@ -70,10 +69,6 @@ export function LandingHero() {
               <div className="flex items-center gap-2.5 text-white/80">
                 <GeminiCliLogo className="size-5" />
                 <span className="text-[15px] font-medium">Gemini CLI</span>
-              </div>
-              <div className="flex items-center gap-2.5 text-white/80">
-                <OpenClawLogo className="size-5" />
-                <span className="text-[15px] font-medium">OpenClaw</span>
               </div>
               <div className="flex items-center gap-2.5 text-white/80">
                 <OpenCodeLogo className="size-5" />

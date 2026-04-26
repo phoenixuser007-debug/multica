@@ -65,7 +65,7 @@ func fakeKimiACPScript() string {
 #
 # Writes the full argv (one arg per line) to $KIMI_ARGS_FILE if that env
 # var is set, so tests can assert that the daemon invokes us with the
-# right flags (`+"`--yolo acp`"+`, not bare `+"`acp`"+`).
+# right flags (` + "`--yolo acp`" + `, not bare ` + "`acp`" + `).
 #
 # Then reads one JSON-RPC request per line from stdin, matches on the
 # method name, and writes back a canned response. Exits after set_model
@@ -153,7 +153,7 @@ func TestKimiBackendSetModelFailureFailsTask(t *testing.T) {
 // prompts, but the `acp` subcommand in kimi-cli takes no options
 // (see cli/__init__.py @cli.command def acp()), so `--yolo` was a
 // no-op and the daemon still hung for 5 min on the first Shell call.
-// The actual bypass is in hermesClient.handleAgentRequest, which
+// The actual bypass is in acpClient.handleAgentRequest, which
 // auto-approves session/request_permission. This test catches
 // accidental re-introduction of the dead flag.
 func TestKimiBackendInvokesACPSubcommand(t *testing.T) {
@@ -205,7 +205,7 @@ func TestKimiBackendInvokesACPSubcommand(t *testing.T) {
 	for _, l := range lines {
 		switch l {
 		case "--yolo", "--auto-approve", "--yes", "-y":
-			t.Errorf("kimi acp doesn't accept %q; auto-approval is handled in hermesClient.handleAgentRequest", l)
+			t.Errorf("kimi acp doesn't accept %q; auto-approval is handled in acpClient.handleAgentRequest", l)
 		}
 	}
 }

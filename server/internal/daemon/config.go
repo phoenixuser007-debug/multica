@@ -20,21 +20,21 @@ const (
 	DefaultHealthPort            = 19514
 	DefaultMaxConcurrentTasks    = 20
 	DefaultGCInterval            = 1 * time.Hour
-	DefaultGCTTL                 = 24 * time.Hour     // 1 day — AI-coding issues rarely stay open long
-	DefaultGCOrphanTTL           = 72 * time.Hour     // 3 days — orphans with no meta (crashes, pre-GC leftovers)
+	DefaultGCTTL                 = 24 * time.Hour // 1 day — AI-coding issues rarely stay open long
+	DefaultGCOrphanTTL           = 72 * time.Hour // 3 days — orphans with no meta (crashes, pre-GC leftovers)
 )
 
 // Config holds all daemon configuration.
 type Config struct {
 	ServerBaseURL      string
 	DaemonID           string
-	LegacyDaemonIDs    []string              // historical daemon_ids this machine may have registered under; reported at register time so the server can merge old runtime rows
+	LegacyDaemonIDs    []string // historical daemon_ids this machine may have registered under; reported at register time so the server can merge old runtime rows
 	DeviceName         string
 	RuntimeName        string
 	CLIVersion         string                // multica CLI version (e.g. "0.1.13")
 	LaunchedBy         string                // "desktop" when spawned by the Electron app, empty for standalone
 	Profile            string                // profile name (empty = default)
-	Agents             map[string]AgentEntry // keyed by provider: claude, codex, copilot, opencode, openclaw, hermes, gemini, pi, cursor, kimi
+	Agents             map[string]AgentEntry // keyed by provider: claude, codex, copilot, opencode, gemini, pi, cursor, kimi
 	WorkspacesRoot     string                // base path for execution envs (default: ~/multica_workspaces)
 	KeepEnvAfterTask   bool                  // preserve env after task for debugging
 	HealthPort         int                   // local HTTP port for health checks (default: 19514)
@@ -100,20 +100,6 @@ func LoadConfig(overrides Overrides) (Config, error) {
 			Model: strings.TrimSpace(os.Getenv("MULTICA_OPENCODE_MODEL")),
 		}
 	}
-	openclawPath := envOrDefault("MULTICA_OPENCLAW_PATH", "openclaw")
-	if _, err := exec.LookPath(openclawPath); err == nil {
-		agents["openclaw"] = AgentEntry{
-			Path:  openclawPath,
-			Model: strings.TrimSpace(os.Getenv("MULTICA_OPENCLAW_MODEL")),
-		}
-	}
-	hermesPath := envOrDefault("MULTICA_HERMES_PATH", "hermes")
-	if _, err := exec.LookPath(hermesPath); err == nil {
-		agents["hermes"] = AgentEntry{
-			Path:  hermesPath,
-			Model: strings.TrimSpace(os.Getenv("MULTICA_HERMES_MODEL")),
-		}
-	}
 	geminiPath := envOrDefault("MULTICA_GEMINI_PATH", "gemini")
 	if _, err := exec.LookPath(geminiPath); err == nil {
 		agents["gemini"] = AgentEntry{
@@ -150,7 +136,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		}
 	}
 	if len(agents) == 0 {
-		return Config{}, fmt.Errorf("no agent CLI found: install claude, codex, copilot, opencode, openclaw, hermes, gemini, pi, cursor-agent, or kimi and ensure it is on PATH")
+		return Config{}, fmt.Errorf("no agent CLI found: install claude, codex, copilot, opencode, gemini, pi, cursor-agent, or kimi and ensure it is on PATH")
 	}
 
 	// Host info

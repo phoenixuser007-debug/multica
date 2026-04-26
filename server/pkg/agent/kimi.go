@@ -23,7 +23,7 @@ var kimiBlockedArgs = map[string]blockedArgMode{
 // via the ACP (Agent Client Protocol) JSON-RPC 2.0 over stdin/stdout.
 //
 // Kimi Code CLI (https://github.com/MoonshotAI/kimi-cli) supports ACP out of
-// the box via the `kimi acp` subcommand. We reuse the existing hermesClient
+// the box via the `kimi acp` subcommand. We reuse the existing acpClient
 // ACP transport since both runtimes speak the same protocol — only the
 // binary, env, and tool-name extraction differ.
 type kimiBackend struct {
@@ -47,7 +47,7 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 
 	// `kimi acp` ignores --yolo / --auto-approve (they're flags on the
 	// root `kimi` command, not on the `acp` subcommand). Instead, the
-	// daemon auto-approves in hermesClient.handleAgentRequest by replying
+	// daemon auto-approves in acpClient.handleAgentRequest by replying
 	// "approve_for_session" to every session/request_permission request.
 	kimiArgs := append([]string{"acp"}, filterCustomArgs(opts.CustomArgs, kimiBlockedArgs, b.cfg.Logger)...)
 	cmd := exec.CommandContext(runCtx, execPath, kimiArgs...)
@@ -91,18 +91,18 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 	var outputMu sync.Mutex
 	var output strings.Builder
 
-	promptDone := make(chan hermesPromptResult, 1)
+	promptDone := make(chan acpPromptResult, 1)
 
-	// Reuse the hermesClient ACP transport — Kimi speaks the same protocol.
-	c := &hermesClient{
+	// Reuse the acpClient ACP transport — Kimi speaks the same protocol.
+	c := &acpClient{
 		cfg:          b.cfg,
 		stdin:        stdin,
 		pending:      make(map[int]*pendingRPC),
 		pendingTools: make(map[string]*pendingToolCall),
 		onMessage: func(msg Message) {
-			// hermesClient.handleToolCallStart has already mapped
-			// the raw ACP title via hermesToolNameFromTitle — which
-			// covers lowercase hermes-style titles ("read:", "patch
+			// acpClient.handleToolCallStart has already mapped
+			// the raw ACP title via acpToolNameFromTitle — which
+			// covers lowercase Kimi-style titles ("read:", "patch
 			// (replace)", …) but not capitalised kimi-style ones
 			// ("Read file: …", "Run command: …"). Re-normalise so
 			// the UI sees consistent snake_case identifiers across
@@ -118,7 +118,7 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 			}
 			trySend(msgCh, msg)
 		},
-		onPromptDone: func(result hermesPromptResult) {
+		onPromptDone: func(result acpPromptResult) {
 			select {
 			case promptDone <- result:
 			default:
@@ -340,9 +340,9 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 //
 // Kimi follows the ACP spec where `title` is a short human-readable
 // label such as "Read file: /path/to/foo.go" or "Run command: ls".
-// hermesToolNameFromTitle upstream handles hermes' lowercase
+// acpToolNameFromTitle upstream handles Kimi' lowercase
 // convention ("read:", "patch (replace)") but not kimi's capitalised
-// format — so we get called on the already-mapped name from hermes
+// format — so we get called on the already-mapped name from Kimi
 // and fix up anything that slipped through. Empty input returns "".
 func kimiToolNameFromTitle(title string) string {
 	t := strings.TrimSpace(title)

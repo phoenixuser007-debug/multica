@@ -109,7 +109,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         {
           title: "Auto-detection & plug-and-play",
           description:
-            "Multica detects available CLIs like Claude Code, Codex, OpenClaw, and OpenCode automatically. Connect a machine, and it\u2019s ready to work.",
+            "Multica detects available CLIs like Claude Code, Codex, and OpenCode automatically. Connect a machine, and it\u2019s ready to work.",
         },
       ],
     },
@@ -129,7 +129,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         title: "Install the CLI & connect your machine",
         description:
-          "Run multica setup to configure, authenticate, and start the daemon. It auto-detects Claude Code, Codex, OpenClaw, and OpenCode on your machine \u2014 plug in and go.",
+          "Run multica setup to configure, authenticate, and start the daemon. It auto-detects Claude Code, Codex, and OpenCode on your machine \u2014 plug in and go.",
       },
       {
         title: "Create your first agent",
@@ -185,7 +185,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         question: "What coding agents does Multica support?",
         answer:
-          "Multica currently supports Claude Code, Codex, OpenClaw, and OpenCode out of the box. The daemon auto-detects whichever CLIs you have installed. Since it\u2019s open source, you can also add your own backends.",
+          "Multica currently supports Claude Code, Codex, and OpenCode out of the box. The daemon auto-detects whichever CLIs you have installed. Since it\u2019s open source, you can also add your own backends.",
       },
       {
         question: "Do I need to self-host, or is there a cloud version?",
@@ -322,7 +322,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Workspace isolation enforced end-to-end for agent execution on the local daemon (security)",
           "Windows daemon stays alive after the terminal closes, so background agents keep running",
           "Board cards render their description preview again — list queries no longer strip the description field",
-          "OpenClaw agent runtime now reads the real model from agent metadata instead of falling back to a default",
+          "Agent runtime model metadata now flows through reliably",
           "Comment Markdown preserved end-to-end — the HTML sanitizer that was stripping formatting has been removed",
         ],
       },
@@ -356,7 +356,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         fixes: [
           "Session hand-off to desktop when already logged in on web",
           "Open redirect vulnerability on `?next=` validated",
-          "OpenClaw stops passing unsupported flags and properly delivers AgentInstructions",
+          "Agent instructions are delivered consistently to local runtimes",
         ],
       },
       {
@@ -444,7 +444,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Editor bubble menu and link preview rewritten for reliability",
-          "OpenClaw backend P0+P1 improvements (multi-line JSON, incremental parsing)",
+          "Runtime output parsing improvements for multi-line JSON and incremental streams",
           "Self-hosted WebSocket URL auto-derived for LAN access",
         ],
         fixes: [
@@ -466,7 +466,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Auth migrated to HttpOnly Cookie with WebSocket Origin whitelist",
           "Full-screen onboarding wizard for new workspaces",
           "Resizable Master Agent chat window with session history improvements",
-          "Token usage log scanning for OpenCode, OpenClaw, and Hermes runtimes",
+          "Token usage log scanning for local runtimes",
         ],
         fixes: [
           "WebSocket first-message authentication security fix",
@@ -493,7 +493,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Workspace ownership checks on daemon API routes and attachment uploads",
           "Markdown sanitizer preserves code blocks from HTML entity escaping",
           "Next.js upgraded to ^16.2.3 for CVE-2026-23869",
-          "OpenClaw backend rewritten to match actual CLI interface",
+          "Runtime backend rewritten to match the actual CLI interface",
         ],
       },
       {
@@ -544,7 +544,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Full-stack Docker Compose for one-command self-hosting",
-          "Hermes Agent Provider via ACP protocol",
+          "ACP protocol support for agent providers",
           "Documentation site with Fumadocs (Getting Started, CLI reference, Agents guide)",
           "Mobile-responsive sidebar and inbox layout",
           "Token usage display per issue in the detail sidebar",
@@ -552,7 +552,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "'C' keyboard shortcut for quick issue creation",
           "Chat session history panel for archived conversations",
           "Minimum CLI version check in daemon for Claude Code and Codex",
-          "OpenClaw and OpenCode added to landing page",
+          "OpenCode added to landing page",
           "`make dev` one-command local development setup",
         ],
         improvements: [
@@ -618,10 +618,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.1.18",
         date: "2026-04-07",
-        title: "OAuth, OpenClaw & Issue Loading",
+        title: "OAuth & Issue Loading",
         changes: [
           "Google OAuth login",
-          "OpenClaw runtime support for running agents on OpenClaw infrastructure",
+          "Expanded runtime support for running agents on local infrastructure",
           "Redesigned agent live card — always sticky with manual expand/collapse toggle",
           "Load all open issues without pagination limit; closed issues paginate on scroll",
           "JWT and CloudFront cookie expiration extended from 72 hours to 30 days",

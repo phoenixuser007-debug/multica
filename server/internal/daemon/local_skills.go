@@ -42,7 +42,6 @@ type runtimeLocalSkillBundle struct {
 // each runtime/provider. Keep these in sync with upstream docs / conventions:
 //   - GitHub Copilot: https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills
 //   - OpenCode: https://opencode.ai/docs/skills
-//   - OpenClaw: https://github.com/openclaw/openclaw/blob/main/docs/tools/skills.md
 //   - Pi: https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/skills.md
 //   - Cursor: official forum guidance referencing the built-in /create-skill flow
 //     (https://forum.cursor.com/t/cursor-doesnt-know-new-skills-arens-saved/158507)
@@ -69,8 +68,6 @@ func localSkillRootForProvider(provider string) (string, bool, error) {
 		return filepath.Join(home, ".copilot", "skills"), true, nil
 	case "opencode":
 		return filepath.Join(home, ".config", "opencode", "skills"), true, nil
-	case "openclaw":
-		return filepath.Join(home, ".openclaw", "skills"), true, nil
 	case "pi":
 		return filepath.Join(home, ".pi", "agent", "skills"), true, nil
 	case "cursor":

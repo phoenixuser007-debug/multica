@@ -1,11 +1,11 @@
 ---
 title: AI coding tools matrix
-description: Multica supports 10 AI coding tools; they implement the same interface, but the capability details diverge significantly.
+description: Multica supports 8 AI coding tools; they implement the same interface, but the capability details diverge significantly.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Multica ships with built-in support for **10 AI coding tools**. They all implement the same interface — queue, dispatch, execute, return results — so you can drive any of them from the same Multica board. **But the capability details diverge significantly**: whether session resumption actually works, whether MCP is supported, where skill files live, how models are selected. This page is the full matrix.
+Multica ships with built-in support for **8 AI coding tools**. They all implement the same interface — queue, dispatch, execute, return results — so you can drive any of them from the same Multica board. **But the capability details diverge significantly**: whether session resumption actually works, whether MCP is supported, where skill files live, how models are selected. This page is the full matrix.
 
 For guidance on picking a tool when creating an agent, see [Creating and configuring agents](/agents-create).
 
@@ -18,10 +18,8 @@ For guidance on picking a tool when creating an agent, see [Creating and configu
 | **Copilot** | GitHub | ✅ | ❌ | `.github/skills/` | Static (determined by account entitlement) |
 | **Cursor** | Anysphere | ⚠️ Code exists but unusable | ❌ | `.cursor/skills/` | Dynamic discovery |
 | **Gemini** | Google | ❌ | ❌ | `.agent_context/skills/` | Static |
-| **Hermes** | Nous Research | ✅ | ❌ | `.agent_context/skills/` (fallback) | Dynamic discovery |
 | **Kimi** | Moonshot | ✅ | ❌ | `.kimi/skills/` | Dynamic discovery |
 | **OpenCode** | SST | ✅ | ❌ | `.config/opencode/skills/` | Dynamic discovery |
-| **OpenClaw** | Open source | ✅ | ❌ | `.agent_context/skills/` (fallback) | Bound to the agent, can't be switched per task |
 | **Pi** | badlogic / Mario Zechner | ✅ (session is a file path) | ❌ | `.pi/skills/` | Dynamic discovery |
 
 ## What each tool is for
@@ -32,7 +30,7 @@ From Anthropic. **First choice for new users** — the most complete feature set
 
 ### Codex
 
-From OpenAI. Uses JSON-RPC 2.0, has stronger statefulness, and a finer-grained approve mechanism (manual approval for `exec_command` and `patch_apply`). **Session resumption code exists but is currently unreachable** — if you need resume, pick Claude Code or one of the ACP family.
+From OpenAI. Uses JSON-RPC 2.0, has stronger statefulness, and a finer-grained approve mechanism (manual approval for `exec_command` and `patch_apply`). **Session resumption code exists but is currently unreachable** — if you need resume, pick a tool from the supported resume row.
 
 ### Copilot
 
@@ -46,21 +44,13 @@ From Anysphere, the CLI counterpart to the Cursor editor. **Session resumption c
 
 From Google, supports the Gemini 2.5 and 3 series. **No session resumption and no MCP** — suitable for one-shot tasks that don't need long context memory.
 
-### Hermes
-
-From Nous Research. Uses the ACP protocol (shares a transport with Kimi). Session resumption works. But the **skill injection path is the generic fallback** (`.agent_context/skills/`), not a dedicated one — if the Hermes CLI itself doesn't read this path, skills may not take effect. Verify by testing.
-
 ### Kimi
 
-From Moonshot. Shares the ACP protocol with Hermes, but the skill path `.kimi/skills/` is Kimi CLI's native discovery mechanism — different from Hermes's fallback.
+From Moonshot. Uses ACP and reads skills from `.kimi/skills/`, Kimi CLI's native discovery mechanism.
 
 ### OpenCode
 
 From SST, open source. Dynamically discovers available models (scans the CLI's configuration file). Session resumption works. **Suitable for tinkerers who want to customize their model catalog.**
-
-### OpenClaw
-
-Open-source project, a CLI agent orchestrator. **Model is bound at the agent layer** (`openclaw agents add --model`) — it can't be overridden per task. Configuration is strictly controlled: users can't pass `--model` or `--system-prompt`; the agent-registration config decides.
 
 ### Pi
 
@@ -72,7 +62,7 @@ The session resumption mechanism is covered in [Tasks](/tasks#can-a-task-continu
 
 | Status | Tools | Meaning |
 |---|---|---|
-| ✅ Really works | Claude Code, Copilot, Hermes, Kimi, OpenCode, OpenClaw, Pi | Pass the resume id and it continues from the previous context |
+| ✅ Really works | Claude Code, Copilot, Kimi, OpenCode, Pi | Pass the resume id and it continues from the previous context |
 | ⚠️ Code exists but unreachable | Codex, Cursor | Resume paths exist in the code but aren't actually reached (Codex silently falls back; Cursor doesn't return session id) — **treat as unsupported** |
 | ❌ None | Gemini | The CLI has no resume mechanism |
 
@@ -80,7 +70,7 @@ The session resumption mechanism is covered in [Tasks](/tasks#can-a-task-continu
 
 ## MCP configuration: only Claude Code actually reads it
 
-**Of the 10 tools, only Claude Code actually consumes `mcp_config`**. The other 9 accept the field but **completely ignore it** — no error, no warning, the config just has no effect.
+**Of the 8 tools, only Claude Code actually consumes `mcp_config`**. The other tools accept the field but **completely ignore it** — no error, no warning, the config just has no effect.
 
 <Callout type="warning">
 If you set `mcp_config` in an agent configuration but pick a tool other than Claude Code, your MCP servers have **no effect** on that agent. MCP integration currently covers Claude Code only.
@@ -100,10 +90,8 @@ Each tool uses **its own** skill discovery path. Before a task runs, the Multica
 | OpenCode | `.config/opencode/skills/` | ✅ Native |
 | Pi | `.pi/skills/` | ✅ Native |
 | Gemini | `.agent_context/skills/` | ⚠️ Generic fallback |
-| Hermes | `.agent_context/skills/` | ⚠️ Generic fallback |
-| OpenClaw | `.agent_context/skills/` | ⚠️ Generic fallback |
 
-Whether a fallback-path tool actually reads this directory depends on the tool's own documentation — no guarantees. If your skills aren't taking effect for Gemini / Hermes / OpenClaw, check this first.
+Whether a fallback-path tool actually reads this directory depends on the tool's own documentation — no guarantees. If your skills aren't taking effect for Gemini, check this first.
 
 For creating and using skills, see [Skills](/skills).
 

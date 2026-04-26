@@ -31,10 +31,9 @@ const (
 )
 
 // ModelListRequest represents a pending or completed model list request.
-// Supported is false when the provider ignores per-agent model
-// selection entirely (currently: hermes). The UI uses this to
-// disable its dropdown rather than silently accepting a value the
-// backend will drop.
+// Supported is false when the provider ignores per-agent model selection
+// entirely. The UI uses this to disable its dropdown rather than silently
+// accepting a value the backend will drop.
 type ModelListRequest struct {
 	ID        string          `json:"id"`
 	RuntimeID string          `json:"runtime_id"`
@@ -48,7 +47,7 @@ type ModelListRequest struct {
 
 // ModelEntry mirrors agent.Model for the wire. `Default` tags the
 // model the runtime advertises as its preferred pick (e.g. Claude
-// Code's shipped default, or hermes' currentModelId) so the UI can
+// Code's shipped default or an ACP runtime's current model) so the UI can
 // badge it — don't drop it when marshalling.
 type ModelEntry struct {
 	ID       string `json:"id"`

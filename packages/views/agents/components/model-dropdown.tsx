@@ -16,8 +16,8 @@ import { Label } from "@multica/ui/components/ui/label";
 // ModelDropdown renders a searchable, creatable model picker for an agent.
 // It fetches the supported-model catalog from the selected runtime — the
 // daemon enumerates models on demand via heartbeat piggyback. Providers
-// that don't honour per-agent model selection at runtime (currently
-// hermes) return supported=false, and the dropdown renders disabled
+// that don't honour per-agent model selection at runtime return
+// supported=false, and the dropdown renders disabled
 // with an explanation instead of silently accepting a value the
 // backend would ignore.
 export function ModelDropdown({
@@ -93,8 +93,7 @@ export function ModelDropdown({
 
   if (!supported && !modelsQuery.isLoading) {
     // Provider doesn't honour per-agent model selection — show a
-    // clearly-disabled state so the user knows why the control is
-    // inert. (Hermes reads its model from ~/.hermes/.env.)
+    // clearly-disabled state so the user knows why the control is inert.
     return (
       <div className="min-w-0">
         <Label className="text-xs text-muted-foreground">Model</Label>
@@ -103,8 +102,7 @@ export function ModelDropdown({
           <div className="min-w-0">
             <div>Model selection is managed by this runtime.</div>
             <div className="mt-0.5 text-xs">
-              Configure the model on the runtime host (e.g. Hermes reads it
-              from its own config file).
+              Configure the model on the runtime host.
             </div>
           </div>
         </div>
