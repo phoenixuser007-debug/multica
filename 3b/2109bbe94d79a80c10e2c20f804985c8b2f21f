@@ -1,0 +1,38 @@
+packages/core/issues/mutations.ts
+  94bba8d22216b938 4,6,10-11,145,147-156,164-169,321-324,333,337,339-341,344,355-400,411-423,447,451-452,455,461-487,494,514,519,533-535,537-544,575-584,603,605,607,611,613-619
+CLAUDE.md
+  94bba8d22216b938 331,376-380
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "3b2109bbe94d79a80c10e2c20f804985c8b2f21f",
+  "prompts": {
+    "35a657f7d8cf4b89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d00df2d2-5112-4932-ade5-4c210617d70e",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 35,
+      "overriden_lines": 0
+    },
+    "94bba8d22216b938": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ae28102-ba99-4d8c-a3b2-7389f1b3d313",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 160,
+      "overriden_lines": 0
+    }
+  }
+}
