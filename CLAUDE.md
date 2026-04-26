@@ -328,7 +328,7 @@ A one-click automated CVE remediation workflow accessible via the shield button 
 | `packages/core/issues/mutations.ts` | `useCVERemediation` hook + `buildCVEIssueDescription` |
 | `server/internal/handler/repos.go` | `GET /api/repos/status`, `POST /api/repos/clone` |
 | `server/internal/handler/jira.go` | `POST /api/jira/cve-tickets` — Jira REST API calls |
-| `server/internal/handler/slack.go` | `POST /api/slack/cve-done` — Slack webhook on completion |
+| _(no server endpoint)_ | Slack notification is posted directly from the agent via `curl $SLACK_WEBHOOK_URL` — no `/api/slack/*` route exists |
 
 ### Repo list and component mapping
 
@@ -373,24 +373,11 @@ The daemon must be restarted after adding to `/etc/environment` to pick up the v
 
 ### Agent issue instructions (already-clean path)
 
-When trivy reports 0 HIGH / 0 CRITICAL, the agent skips Steps 4–5 (ctl + PR) and goes directly to Step 6: transition Jira to **Resolve Issue**, set Multica issue to `done`, POST to `/api/slack/cve-done` with `pr_title = "Already clean — no PR needed"`.
+When trivy reports 0 HIGH / 0 CRITICAL, the agent skips Steps 4–5 (ctl + PR) and goes directly to Step 6: transition Jira to **Resolve Issue**, set Multica issue to `done`, and post a `:white_check_mark:` "scan clean" message directly to `$SLACK_WEBHOOK_URL` via curl.
 
-### Slack notification endpoint
+### Slack notification
 
-`POST /api/slack/cve-done` (requires `Authorization` + `X-Workspace-ID` headers):
-```json
-{
-  "repo": "edge-platform-core",
-  "jira_key": "CNX-240415",
-  "jira_url": "https://jira.arubanetworks.com/browse/CNX-240415",
-  "pr_title": "CNX-240415: chore: CVE remediation edge-platform-core",
-  "pr_url": "https://stash.arubanetworks.com/...",
-  "cve_high_before": 3,
-  "cve_critical_before": 1,
-  "cve_high_after": 0,
-  "cve_critical_after": 0
-}
-```
+The CVE flow posts directly to the Slack incoming webhook from the agent shell — no multica server endpoint is involved. The exact `curl $SLACK_WEBHOOK_URL` invocations are generated into the agent's Multica issue description by `buildCVEIssueDescription` (in `packages/core/issues/mutations.ts`) for both the PR-raised and already-clean paths. This matches the IoTOps flow's pattern (`scripts/iotops-skills/iotops-verify-pr-slack/slack-templates.md`).
 
 ## Daemon Task Dispatch
 

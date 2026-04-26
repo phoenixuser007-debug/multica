@@ -1,13 +1,14 @@
 import { useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import { issueKeys, CLOSED_PAGE_SIZE, type MyIssuesFilter } from "./queries";
+import { issueKeys, ISSUE_PAGE_SIZE, flattenIssueBuckets, type MyIssuesFilter } from "./queries";
 import { useWorkspaceId } from "../hooks";
-import type { Issue, IssueReaction } from "../types";
+import type { Issue, IssueReaction, IssueStatus } from "../types";
 import type {
   CreateIssueRequest,
   UpdateIssueRequest,
-  ListIssuesResponse,
+  ListIssuesCache,
+  IssueStatusBucket,
 } from "../types";
 import type { TimelineEntry, IssueSubscriber, Reaction } from "../types";
 
@@ -141,27 +142,18 @@ export function buildCVEIssueDescription(repo: CVERemediationRepo): string {
     ``,
     `## Step 6 — Done`,
     ``,
-    `**PR-raised path (Branch B)** — CVEs fixed, PR open. Move Multica issue to \`done\` and notify Slack:`,
+    `**PR-raised path (Branch B)** — CVEs fixed, PR open. Move Multica issue to \`done\` and notify Slack (direct webhook post — no server endpoint involved):`,
     `\`\`\``,
-    `curl -s -X POST http://localhost:8090/api/slack/cve-done \\`,
-    `  -H "Content-Type: application/json" \\`,
-    `  -H "X-Workspace-ID: $MULTICA_WORKSPACE_ID" \\`,
-    `  -H "Authorization: Bearer $MULTICA_TOKEN" \\`,
-    `  -d '{`,
-    `    "repo": "${repo.name}",`,
-    ...(repo.jiraSubtaskKey
-      ? [
-          `    "jira_key": "${repo.jiraSubtaskKey}",`,
-          `    "jira_url": "https://jira.arubanetworks.com/browse/${repo.jiraSubtaskKey}",`,
-        ]
-      : []),
-    `    "pr_title": "<PR title from pr-cli output>",`,
-    `    "pr_url": "<PR URL from pr-cli output>",`,
-    `    "cve_high_before": <HIGH count from first trivy scan>,`,
-    `    "cve_critical_before": <CRITICAL count from first trivy scan>,`,
-    `    "cve_high_after": 0,`,
-    `    "cve_critical_after": 0`,
-    `  }'`,
+    `TEXT=$(printf ':shield: *CVE remediation PR raised for \`%s\`*\\n*Jira:* <%s|%s>\\n*PR:* <%s|%s>\\n*HIGH:* %s -> 0  |  *CRITICAL:* %s -> 0' \\`,
+    `  "${repo.name}" \\`,
+    `  "${repo.jiraSubtaskKey ? `https://jira.arubanetworks.com/browse/${repo.jiraSubtaskKey}` : ""}" \\`,
+    `  "${repo.jiraSubtaskKey ?? ""}" \\`,
+    `  "<PR URL from pr-cli output>" \\`,
+    `  "<PR title from pr-cli output>" \\`,
+    `  "<HIGH count from first trivy scan>" \\`,
+    `  "<CRITICAL count from first trivy scan>")`,
+    `curl -sf -X POST -H "Content-Type: application/json" "$SLACK_WEBHOOK_URL" \\`,
+    `  -d "$(jq -n --arg t "$TEXT" '{text:$t}')"`,
     `\`\`\``,
     ``,
     `**Already-clean path (Branch A)** — trivy was 0→0, no PR raised. Transition Jira to resolved, move Multica issue to \`done\`, notify Slack:`,
@@ -169,25 +161,12 @@ export function buildCVEIssueDescription(repo: CVERemediationRepo): string {
     ...(repo.jiraSubtaskKey
       ? [`python3 /root/.claude/skills/jira-cli/scripts/jira.py transition ${repo.jiraSubtaskKey} "Resolve Issue"`]
       : [`# python3 /root/.claude/skills/jira-cli/scripts/jira.py transition <JIRA-KEY> "Resolve Issue"`]),
-    `curl -s -X POST http://localhost:8090/api/slack/cve-done \\`,
-    `  -H "Content-Type: application/json" \\`,
-    `  -H "X-Workspace-ID: $MULTICA_WORKSPACE_ID" \\`,
-    `  -H "Authorization: Bearer $MULTICA_TOKEN" \\`,
-    `  -d '{`,
-    `    "repo": "${repo.name}",`,
-    ...(repo.jiraSubtaskKey
-      ? [
-          `    "jira_key": "${repo.jiraSubtaskKey}",`,
-          `    "jira_url": "https://jira.arubanetworks.com/browse/${repo.jiraSubtaskKey}",`,
-        ]
-      : []),
-    `    "pr_title": "Already clean — no PR needed",`,
-    `    "pr_url": "",`,
-    `    "cve_high_before": 0,`,
-    `    "cve_critical_before": 0,`,
-    `    "cve_high_after": 0,`,
-    `    "cve_critical_after": 0`,
-    `  }'`,
+    `TEXT=$(printf ':white_check_mark: *CVE scan clean for \`%s\`*\\n*Jira:* <%s|%s>\\nNo PR needed (0 HIGH, 0 CRITICAL).' \\`,
+    `  "${repo.name}" \\`,
+    `  "${repo.jiraSubtaskKey ? `https://jira.arubanetworks.com/browse/${repo.jiraSubtaskKey}` : ""}" \\`,
+    `  "${repo.jiraSubtaskKey ?? ""}")`,
+    `curl -sf -X POST -H "Content-Type: application/json" "$SLACK_WEBHOOK_URL" \\`,
+    `  -d "$(jq -n --arg t "$TEXT" '{text:$t}')"`,
     `\`\`\``,
     ``,
     `## If the user comments`,
@@ -339,11 +318,10 @@ export function useLoadMoreDoneIssues(myIssues?: { scope: string; filter: MyIssu
   const queryKey = myIssues
     ? issueKeys.myList(wsId, myIssues.scope, myIssues.filter)
     : issueKeys.list(wsId);
-  const cache = qc.getQueryData<ListIssuesResponse>(queryKey);
-  const doneLoaded = cache
-    ? cache.issues.filter((i) => i.status === "done").length
-    : 0;
-  const doneTotal = cache?.doneTotal ?? 0;
+  const cache = qc.getQueryData<ListIssuesCache>(queryKey);
+  const doneBucket = cache?.byStatus["done"];
+  const doneLoaded = doneBucket?.issues.length ?? 0;
+  const doneTotal = doneBucket?.total ?? 0;
   const hasMore = doneLoaded < doneTotal;
 
   const loadMore = useCallback(async () => {
@@ -352,18 +330,18 @@ export function useLoadMoreDoneIssues(myIssues?: { scope: string; filter: MyIssu
     try {
       const res = await api.listIssues({
         status: "done",
-        limit: CLOSED_PAGE_SIZE,
+        limit: ISSUE_PAGE_SIZE,
         offset: doneLoaded,
         ...myIssues?.filter,
       });
-      qc.setQueryData<ListIssuesResponse>(queryKey, (old) => {
+      qc.setQueryData<ListIssuesCache>(queryKey, (old) => {
         if (!old) return old;
-        const existingIds = new Set(old.issues.map((i) => i.id));
-        const newIssues = res.issues.filter((i) => !existingIds.has(i.id));
+        const existing = old.byStatus["done"]?.issues ?? [];
+        const existingIds = new Set(existing.map((i) => i.id));
+        const merged = [...existing, ...res.issues.filter((i) => !existingIds.has(i.id))];
         return {
           ...old,
-          issues: [...old.issues, ...newIssues],
-          doneTotal: res.total,
+          byStatus: { ...old.byStatus, done: { issues: merged, total: res.total } },
         };
       });
     } finally {
@@ -372,6 +350,52 @@ export function useLoadMoreDoneIssues(myIssues?: { scope: string; filter: MyIssu
   }, [qc, queryKey, doneLoaded, hasMore, isLoading, myIssues?.filter]);
 
   return { loadMore, hasMore, isLoading, doneTotal };
+}
+
+export function useLoadMoreByStatus(
+  status: IssueStatus,
+  myIssuesOpts?: { scope: string; filter: MyIssuesFilter },
+) {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  const [isLoading, setIsLoading] = useState(false);
+
+  const queryKey = myIssuesOpts
+    ? issueKeys.myList(wsId, myIssuesOpts.scope, myIssuesOpts.filter)
+    : issueKeys.list(wsId);
+
+  const cache = qc.getQueryData<ListIssuesCache>(queryKey);
+  const bucket = cache?.byStatus[status];
+  const loaded = bucket?.issues.length ?? 0;
+  const total = bucket?.total ?? 0;
+  const hasMore = loaded < total;
+
+  const loadMore = useCallback(async () => {
+    if (isLoading || !hasMore) return;
+    setIsLoading(true);
+    try {
+      const res = await api.listIssues({
+        status,
+        limit: ISSUE_PAGE_SIZE,
+        offset: loaded,
+        ...myIssuesOpts?.filter,
+      });
+      qc.setQueryData<ListIssuesCache>(queryKey, (old) => {
+        if (!old) return old;
+        const existing = old.byStatus[status]?.issues ?? [];
+        const existingIds = new Set(existing.map((i) => i.id));
+        const merged = [...existing, ...res.issues.filter((i) => !existingIds.has(i.id))];
+        return {
+          ...old,
+          byStatus: { ...old.byStatus, [status]: { issues: merged, total: res.total } },
+        };
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [qc, queryKey, loaded, hasMore, isLoading, status, myIssuesOpts?.filter]);
+
+  return { loadMore, hasMore, isLoading, total };
 }
 
 // ---------------------------------------------------------------------------
@@ -384,17 +408,19 @@ export function useCreateIssue() {
   return useMutation({
     mutationFn: (data: CreateIssueRequest) => api.createIssue(data),
     onSuccess: (newIssue) => {
-      qc.setQueryData<ListIssuesResponse>(issueKeys.list(wsId), (old) =>
-        old && !old.issues.some((i) => i.id === newIssue.id)
-          ? {
-              ...old,
-              issues: [...old.issues, newIssue],
-              total: old.total + 1,
-              doneTotal: (old.doneTotal ?? 0) + (newIssue.status === "done" ? 1 : 0),
-            }
-          : old,
-      );
-      // Invalidate parent's children query so sub-issues list updates immediately
+      qc.setQueryData<ListIssuesCache>(issueKeys.list(wsId), (old) => {
+        if (!old) return old;
+        const status = newIssue.status as IssueStatus;
+        const bucket: IssueStatusBucket = old.byStatus[status] ?? { issues: [], total: 0 };
+        if (bucket.issues.some((i) => i.id === newIssue.id)) return old;
+        return {
+          ...old,
+          byStatus: {
+            ...old.byStatus,
+            [status]: { issues: [...bucket.issues, newIssue], total: bucket.total + 1 },
+          },
+        };
+      });
       if (newIssue.parent_issue_id) {
         qc.invalidateQueries({ queryKey: issueKeys.children(wsId, newIssue.parent_issue_id) });
         qc.invalidateQueries({ queryKey: issueKeys.childProgress(wsId) });
@@ -418,38 +444,54 @@ export function useUpdateIssue() {
       // yield to the event loop, letting @dnd-kit reset its visual state
       // before the optimistic update lands.
       qc.cancelQueries({ queryKey: issueKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListIssuesResponse>(issueKeys.list(wsId));
+      const prevList = qc.getQueryData<ListIssuesCache>(issueKeys.list(wsId));
       const prevDetail = qc.getQueryData<Issue>(issueKeys.detail(wsId, id));
 
       // Resolve parent_issue_id from the freshest source so we can keep the
-      // parent's children cache in sync (used by the parent issue's
-      // sub-issues list).
+      // parent's children cache in sync (used by the parent issue's sub-issues list).
+      const flatIssues = prevList ? flattenIssueBuckets(prevList) : [];
       const parentId =
         prevDetail?.parent_issue_id ??
-        prevList?.issues.find((i) => i.id === id)?.parent_issue_id ??
+        flatIssues.find((i) => i.id === id)?.parent_issue_id ??
         null;
       const prevChildren = parentId
         ? qc.getQueryData<Issue[]>(issueKeys.children(wsId, parentId))
         : undefined;
 
-      qc.setQueryData<ListIssuesResponse>(issueKeys.list(wsId), (old) =>
-        old
-          ? {
-              ...old,
-              issues: old.issues.map((i) =>
-                i.id === id ? { ...i, ...data } : i,
-              ),
-            }
-          : old,
-      );
+      qc.setQueryData<ListIssuesCache>(issueKeys.list(wsId), (old) => {
+        if (!old) return old;
+        const oldStatus = flattenIssueBuckets(old).find((i) => i.id === id)?.status as IssueStatus | undefined;
+        if (!oldStatus) return old;
+        const newStatus = (data.status ?? oldStatus) as IssueStatus;
+        const updated = { ...flattenIssueBuckets(old).find((i) => i.id === id)!, ...data };
+        if (oldStatus === newStatus) {
+          const bucket = old.byStatus[oldStatus] ?? { issues: [], total: 0 };
+          return {
+            ...old,
+            byStatus: {
+              ...old.byStatus,
+              [oldStatus]: { ...bucket, issues: bucket.issues.map((i) => (i.id === id ? updated : i)) },
+            },
+          };
+        }
+        const fromBucket = old.byStatus[oldStatus] ?? { issues: [], total: 0 };
+        const toBucket = old.byStatus[newStatus] ?? { issues: [], total: 0 };
+        return {
+          ...old,
+          byStatus: {
+            ...old.byStatus,
+            [oldStatus]: { issues: fromBucket.issues.filter((i) => i.id !== id), total: Math.max(0, fromBucket.total - 1) },
+            [newStatus]: { issues: [...toBucket.issues, updated], total: toBucket.total + 1 },
+          },
+        };
+      });
       qc.setQueryData<Issue>(issueKeys.detail(wsId, id), (old) =>
         old ? { ...old, ...data } : old,
       );
       if (parentId) {
         qc.setQueryData<Issue[]>(
           issueKeys.children(wsId, parentId),
-          (old) =>
-            old?.map((c) => (c.id === id ? { ...c, ...data } : c)),
+          (old) => old?.map((c) => (c.id === id ? { ...c, ...data } : c)),
         );
       }
       return { prevList, prevDetail, prevChildren, parentId, id };
@@ -468,19 +510,13 @@ export function useUpdateIssue() {
     onSettled: (_data, _err, vars, ctx) => {
       qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, vars.id) });
       qc.invalidateQueries({ queryKey: issueKeys.list(wsId) });
-      // Invalidate old parent's children cache
       if (ctx?.parentId) {
-        qc.invalidateQueries({
-          queryKey: issueKeys.children(wsId, ctx.parentId),
-        });
+        qc.invalidateQueries({ queryKey: issueKeys.children(wsId, ctx.parentId) });
         qc.invalidateQueries({ queryKey: issueKeys.childProgress(wsId) });
       }
-      // Invalidate new parent's children cache when parent_issue_id changed
       const newParentId = vars.parent_issue_id;
       if (newParentId && newParentId !== ctx?.parentId) {
-        qc.invalidateQueries({
-          queryKey: issueKeys.children(wsId, newParentId),
-        });
+        qc.invalidateQueries({ queryKey: issueKeys.children(wsId, newParentId) });
         qc.invalidateQueries({ queryKey: issueKeys.childProgress(wsId) });
       }
     },
@@ -494,17 +530,18 @@ export function useDeleteIssue() {
     mutationFn: (id: string) => api.deleteIssue(id),
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: issueKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListIssuesResponse>(issueKeys.list(wsId));
-      const deleted = prevList?.issues.find((i) => i.id === id);
-      qc.setQueryData<ListIssuesResponse>(issueKeys.list(wsId), (old) => {
+      const prevList = qc.getQueryData<ListIssuesCache>(issueKeys.list(wsId));
+      const deleted = prevList ? flattenIssueBuckets(prevList).find((i) => i.id === id) : undefined;
+      qc.setQueryData<ListIssuesCache>(issueKeys.list(wsId), (old) => {
         if (!old) return old;
-        const d = old.issues.find((i) => i.id === id);
-        return {
-          ...old,
-          issues: old.issues.filter((i) => i.id !== id),
-          total: old.total - 1,
-          doneTotal: (old.doneTotal ?? 0) - (d?.status === "done" ? 1 : 0),
-        };
+        const newByStatus = { ...old.byStatus };
+        for (const [st, bucket] of Object.entries(old.byStatus) as [IssueStatus, IssueStatusBucket][]) {
+          if (bucket.issues.some((i) => i.id === id)) {
+            newByStatus[st] = { issues: bucket.issues.filter((i) => i.id !== id), total: Math.max(0, bucket.total - 1) };
+            break;
+          }
+        }
+        return { ...old, byStatus: newByStatus };
       });
       qc.removeQueries({ queryKey: issueKeys.detail(wsId, id) });
       return { prevList, parentIssueId: deleted?.parent_issue_id };
@@ -535,17 +572,16 @@ export function useBatchUpdateIssues() {
     }) => api.batchUpdateIssues(ids, updates),
     onMutate: async ({ ids, updates }) => {
       await qc.cancelQueries({ queryKey: issueKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListIssuesResponse>(issueKeys.list(wsId));
-      qc.setQueryData<ListIssuesResponse>(issueKeys.list(wsId), (old) =>
-        old
-          ? {
-              ...old,
-              issues: old.issues.map((i) =>
-                ids.includes(i.id) ? { ...i, ...updates } : i,
-              ),
-            }
-          : old,
-      );
+      const prevList = qc.getQueryData<ListIssuesCache>(issueKeys.list(wsId));
+      const idSet = new Set(ids);
+      qc.setQueryData<ListIssuesCache>(issueKeys.list(wsId), (old) => {
+        if (!old) return old;
+        const newByStatus: ListIssuesCache["byStatus"] = {};
+        for (const [st, bucket] of Object.entries(old.byStatus) as [IssueStatus, IssueStatusBucket][]) {
+          newByStatus[st] = { ...bucket, issues: bucket.issues.map((i) => idSet.has(i.id) ? { ...i, ...updates } : i) };
+        }
+        return { ...old, byStatus: newByStatus };
+      });
       return { prevList };
     },
     onError: (_err, _vars, ctx) => {
@@ -564,24 +600,23 @@ export function useBatchDeleteIssues() {
     mutationFn: (ids: string[]) => api.batchDeleteIssues(ids),
     onMutate: async (ids) => {
       await qc.cancelQueries({ queryKey: issueKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListIssuesResponse>(issueKeys.list(wsId));
+      const prevList = qc.getQueryData<ListIssuesCache>(issueKeys.list(wsId));
       const idSet = new Set(ids);
+      const flatIssues = prevList ? flattenIssueBuckets(prevList) : [];
       const parentIssueIds = new Set(
-        prevList?.issues
+        flatIssues
           .filter((i) => idSet.has(i.id) && i.parent_issue_id)
           .map((i) => i.parent_issue_id!) ?? [],
       );
-      qc.setQueryData<ListIssuesResponse>(issueKeys.list(wsId), (old) => {
+      qc.setQueryData<ListIssuesCache>(issueKeys.list(wsId), (old) => {
         if (!old) return old;
-        const doneDeleted = old.issues.filter(
-          (i) => idSet.has(i.id) && i.status === "done",
-        ).length;
-        return {
-          ...old,
-          issues: old.issues.filter((i) => !idSet.has(i.id)),
-          total: old.total - ids.length,
-          doneTotal: (old.doneTotal ?? 0) - doneDeleted,
-        };
+        const newByStatus: ListIssuesCache["byStatus"] = {};
+        for (const [st, bucket] of Object.entries(old.byStatus) as [IssueStatus, IssueStatusBucket][]) {
+          const kept = bucket.issues.filter((i) => !idSet.has(i.id));
+          const removed = bucket.issues.length - kept.length;
+          newByStatus[st] = { issues: kept, total: Math.max(0, bucket.total - removed) };
+        }
+        return { ...old, byStatus: newByStatus };
       });
       return { prevList, parentIssueIds };
     },
