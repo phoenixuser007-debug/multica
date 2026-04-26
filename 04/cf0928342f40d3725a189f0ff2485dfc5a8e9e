@@ -1,0 +1,44 @@
+apps/docs/content/docs/providers.mdx
+  f00b803ac2bc0404 55
+server/pkg/agent/pi_test.go
+  35a657f7d8cf4b89 1-43
+server/internal/daemon/execenv/execenv_test.go
+  35a657f7d8cf4b89 44
+server/internal/daemon/execenv/context.go
+  35a657f7d8cf4b89 18,68-71
+server/internal/daemon/execenv/runtime_config.go
+  35a657f7d8cf4b89 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "04cf0928342f40d3725a189f0ff2485dfc5a8e9e",
+  "prompts": {
+    "35a657f7d8cf4b89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d00df2d2-5112-4932-ade5-4c210617d70e",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 4,
+      "accepted_lines": 291,
+      "overriden_lines": 0
+    },
+    "f00b803ac2bc0404": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dcad9-7138-7bf1-9a4d-3955b2bde1bf",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Holla, Naveen",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
