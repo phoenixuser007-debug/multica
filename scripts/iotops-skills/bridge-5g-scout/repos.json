@@ -1,0 +1,55 @@
+{
+  "clusters": [
+    {
+      "name": "aqua",
+      "default_url": "https://aqua.cloudops.arubadev.cloud.hpe.com/logs",
+      "token_env": "AQUA_HUMIO_TOKEN",
+      "url_override_env": "AQUA_HUMIO_URL"
+    },
+    {
+      "name": "brooke",
+      "default_url": "https://brooke.cloudops.arubadev.cloud.hpe.com/logs",
+      "token_env": "BROOKE_HUMIO_TOKEN",
+      "url_override_env": "BROOKE_HUMIO_URL"
+    },
+    {
+      "name": "jedi",
+      "default_url": "https://jedi.cloudops.arubadev.cloud.hpe.com/logs",
+      "token_env": "JEDI_HUMIO_TOKEN",
+      "url_override_env": "JEDI_HUMIO_URL"
+    },
+    {
+      "name": "firth",
+      "default_url": "https://firth.cloudops.arubadev.cloud.hpe.com/logs",
+      "token_env": "FIRTH_HUMIO_TOKEN",
+      "url_override_env": "FIRTH_HUMIO_URL"
+    }
+  ],
+  "repos": [
+    "bridge-5g-ccs-interaction",
+    "bridge-5g-cloud-proto",
+    "bridge-5g-common-lib",
+    "bridge-5g-device-connectivity",
+    "bridge-5g-device-health",
+    "bridge-5g-dia",
+    "bridge-5g-events-processor",
+    "bridge-5g-exporter-service",
+    "bridge-5g-kafka",
+    "bridge-5g-message-transformer",
+    "bridge-5g-state-graphql-service",
+    "bridge-5g-state-processor",
+    "bridge-5g-state-publisher",
+    "bridge-5g-stats-graphql-service",
+    "bridge-5g-stats-processor",
+    "bridge-5g-stats-publisher"
+  ],
+  "notes": {
+    "stash_project": "GVT",
+    "stash_base": "https://stash.arubanetworks.com",
+    "base_branch": "devel",
+    "pod_to_repo_mapping": "Longest-prefix match against pod_name. Pod variants should still resolve to the base repo name.",
+    "token_convention": "Humio Bearer token per cluster lives in env var {CLUSTER_UPPER}_HUMIO_TOKEN (e.g. AQUA_HUMIO_TOKEN). Optional URL override in {CLUSTER_UPPER}_HUMIO_URL.",
+    "url_convention": "Default is https://<cluster>.cloudops.arubadev.cloud.hpe.com/logs. For clusters that don't follow this pattern, set the URL override env var.",
+    "cadence": "Daily — the autopilot's schedule trigger fires once per day at a user-chosen UTC time (set via the multica autopilot UI)."
+  }
+}
