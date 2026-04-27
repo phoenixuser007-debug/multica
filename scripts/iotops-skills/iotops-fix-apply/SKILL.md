@@ -127,6 +127,46 @@ docker exec dev-env-dev-1 bash -c \
 
 If it still fails, iterate (edit → re-test). If it passes, continue.
 
+### 5b. Coverage sanity check — the test must actually run
+
+A passing focused test (`-Dtest=YourTest`) does **not** prove the test will run during the JaCoCo gate. If the test is in the wrong module, excluded by surefire patterns, missing from `target/test-classes/`, or skipped at runtime, JaCoCo will report `instructions covered ratio is 0.00` and the gate will block the push — wasting a full ctl run. Catch this BEFORE invoking ctl.
+
+For the module that contains the change (call it `$MODULE`, e.g. `api`, `integration-test`, or `core`):
+
+1. **Run the module's full test suite** (no `-Dtest=` filter), matching what JaCoCo will see during ctl:
+   ```bash
+   docker exec dev-env-dev-1 bash -c \
+     "cd /home/dev/repo/ws/$SERVICE && mvn -pl $MODULE test -q"
+   ```
+
+2. **Verify the new test class compiled into the right module:**
+   ```bash
+   docker exec dev-env-dev-1 bash -c \
+     "find /home/dev/repo/ws/$SERVICE/$MODULE/target/test-classes -name '<YourTest>.class'"
+   ```
+   If empty, the test is in the wrong module — move the source file under `$MODULE/src/test/java/...` and rerun.
+
+3. **Verify the new test actually executed:**
+   ```bash
+   docker exec dev-env-dev-1 bash -c \
+     "ls /home/dev/repo/ws/$SERVICE/$MODULE/target/surefire-reports/TEST-*<YourTest>*.xml"
+   ```
+   Read the XML and confirm `tests > 0` and `errors=0 failures=0`. If skipped, surefire excluded it — check `<surefire>` config in the parent `pom.xml`.
+
+4. **Verify JaCoCo recorded coverage:**
+   ```bash
+   docker exec dev-env-dev-1 bash -c \
+     "ls -la /home/dev/repo/ws/$SERVICE/$MODULE/target/jacoco.exec"
+   ```
+   The file must exist and be > 0 bytes. An empty / missing exec means the JaCoCo agent wasn't loaded — likely because the `mvn test` invocation needs `-Pcoverage` or similar profile that the project's parent pom defines.
+
+5. **If JaCoCo bundle ratio is < threshold for the module that contains your change**, the test isn't pulling its weight (or isn't running). Fixing options before reaching ctl:
+   - Add another test case to the same test class that exercises a different code path of the changed file (raises both instruction + branch coverage cheaply).
+   - Move the test from a sub-module that has its own JaCoCo bundle into the module that owns the changed source.
+   - If the project legitimately had pre-existing 0% coverage on that module (rare), this is a baseline-broken case — handle in step 6a.
+
+Only proceed to step 6 (full ctl gate) once steps 5b.1–5b.4 all pass. **Do not declare the fix done while the new test isn't visible to the JaCoCo gate.** A focused test alone isn't a complete fix.
+
 ### 5a. Ensure git safe.directory inside the dev container
 
 `tools/lint-source-code.sh` triggers a `pre-commit` hook that calls `git`
