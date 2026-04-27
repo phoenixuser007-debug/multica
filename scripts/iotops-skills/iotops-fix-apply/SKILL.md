@@ -149,7 +149,41 @@ invoking `ctl`.
 
 The `ctl` skill runs compile → unit tests → lint source code → lint k8s objects inside `dev-env-dev-1`. Invoke it exactly as the CVE flow does. **Do not substitute your own `mvn verify`** — `ctl` covers more checks and matches what Jenkins will run later.
 
-If `ctl` fails:
+If `ctl` fails, you must distinguish between two cases — **don't auto-block on a baseline that's already broken on `devel`**:
+
+#### 6a. Baseline check (only run on `ctl` failure)
+
+Many bridge-5g / iotops repos currently have flaky integration tests, missing private-proto deps, or pre-existing JaCoCo/lint violations on `devel`. Blocking the fix in those cases hides our work behind unrelated infrastructure breakage. Re-run `ctl` against a **clean `devel` checkout** (no fix applied) and compare:
+
+```bash
+git stash push -m "fixer-baseline-check" --include-untracked
+git checkout devel
+git reset --hard origin/devel
+# re-run the same ctl invocation that just failed
+ctl_BASELINE_OUTPUT=$(... same ctl command ... 2>&1) || true
+git checkout "$BRANCH"
+git stash pop
+```
+
+Compare `ctl_BASELINE_OUTPUT` to the original failure tail. Two paths:
+
+**Baseline ALSO fails on the same step (compile / unit-test / lint / coverage)** → the breakage is pre-existing, not caused by this fix. Do this:
+1. Push the bugfix branch as **draft** anyway — Jenkins will reject it but the branch + commit history are preserved for review.
+2. Post a comment on the current issue stating: "ctl failure reproduces on clean `origin/devel` (HEAD: `<sha>`) — pre-existing breakage. Pushed as draft for review."
+3. Create a child INFRA issue assigned to the human owner (`--assignee` based on the repo's `CODEOWNERS` or fall back to `naveen.u.holla@hpe.com`):
+   ```bash
+   multica issue create \
+     --title "INFRA: $SERVICE devel baseline broken — blocks Fixer auto-push" \
+     --description "$(cat /tmp/baseline-report.md)" \
+     --priority high \
+     --parent-id "$FIXER_ISSUE_ID"
+   ```
+4. Set this issue status to `in_review` (NOT `blocked`) and **proceed to Step 8 to spawn the Verifier** — they'll pick up the draft PR.
+
+**Baseline PASSES (failure introduced by this fix)** → fall through to 6b.
+
+#### 6b. True fix-introduced failure
+
 - Post a comment on the current issue with the last 80 lines of the failed step's log
 - Set the issue status to `blocked`
 - Post a Slack alert using the `validation_failed` template from `slack-templates.md`, threaded into the existing Scout thread:
