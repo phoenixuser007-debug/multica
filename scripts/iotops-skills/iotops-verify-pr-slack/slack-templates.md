@@ -92,10 +92,10 @@ Post this immediately after creating the Fixer child issue. Capture the returned
 `ts` and store it so the Fixer and Verifier can thread their replies.
 
 ```bash
-FIXER_ISSUE_URL="${MULTICA_APP_URL}/issues/${FIXER_ISSUE_ID}"
-
-SCOUT_MSG=$(printf ':bug: *New IoTOps error detected*\n*Service:* `%s`  |  *Cluster:* %s\n*Exception:* `%s` at `%s:%s`\n*Jira:* <%s|%s>  |  *Humio:* <%s|Open>  |  *Issue:* <%s|View in Multica>' \
-  "$SERVICE" "$CLUSTER" "$EXC" "$FILE" "$LINE" "$JIRA_URL" "$JIRA_KEY" "$HUMIO_LINK" "$FIXER_ISSUE_URL")
+# No multica link in Scout messages — Slack is for the team, multica audit
+# trail stays inside multica. Jira + Humio are the only outbound links.
+SCOUT_MSG=$(printf ':bug: *New IoTOps error detected*\n*Service:* `%s`  |  *Cluster:* %s\n*Exception:* `%s` at `%s:%s`\n*Jira:* <%s|%s>  |  *Humio:* <%s|Open>' \
+  "$SERVICE" "$CLUSTER" "$EXC" "$FILE" "$LINE" "$JIRA_URL" "$JIRA_KEY" "$HUMIO_LINK")
 
 SLACK_RESP=$(slack_post "$SCOUT_MSG")
 SLACK_THREAD_TS=$(echo "$SLACK_RESP" | jq -r '.ts // empty')

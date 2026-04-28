@@ -104,6 +104,35 @@ multica issue search "${FINGERPRINT}" --output json \
 
 If the filtered result is non-empty, another run is already on it — skip.
 
+### 6a. Build the Humio deep-link (`$HUMIO_LINK`)
+
+The deep-link goes into the Jira description, the Fixer issue's `## Error Context` block, the Slack message, and (later) the PR body. **Build it once here and reuse the variable** — do not improvise different URLs in different steps.
+
+The canonical UI URL format (per `humio-lsql.md`) is:
+
+```
+https://<cluster>.cloudops.arubadev.cloud.hpe.com/logs/<repo>/search?query=<url-encoded>&start=<ms>&end=<ms>
+```
+
+⚠️ **Common mistake**: `https://.../logs?repo=<repo>&query=...` — the `?repo=` form is the **API root**, not the UI route. It opens to a Humio landing page that won't load the search. Use `/logs/<repo>/search?query=...` (path-based repo).
+
+The LSQL filter must scope to the **specific error**, not just the pod — otherwise the click lands on a pod-wide stream and the human has to scroll for the actual line. Combine the pod filter with the source `<file>:<line>` substring; every Java logger emits that bracket on the error log line, so the deep-link lands directly on the offending event.
+
+```bash
+HUMIO_BASE="${!CLUSTER_UPPER_HUMIO_URL:-https://${CLUSTER}.cloudops.arubadev.cloud.hpe.com/logs}"
+START_MS=$(( TS_MS - 10*60*1000 ))
+END_MS=$(( TS_MS + 10*60*1000 ))
+LSQL='"kubernetes.pod_name" = "'"$POD"'" AND "'"$FILE:$LINE_NO"'"'
+ENCODED_QUERY=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))' "$LSQL")
+HUMIO_LINK="${HUMIO_BASE}/gravity/search?query=${ENCODED_QUERY}&start=${START_MS}&end=${END_MS}"
+
+# Sanity-check the URL is the path-based form, not the broken ?repo= form.
+case "$HUMIO_LINK" in
+  *"/logs/gravity/search?"*) ;;
+  *) echo "ERROR: malformed HUMIO_LINK: $HUMIO_LINK" >&2; exit 1 ;;
+esac
+```
+
 ### 7. For each distinct fingerprint — ensure a JIRA Bug exists
 
 Look for an existing JIRA ticket first (JQL search):
@@ -136,7 +165,60 @@ Save the returned `key` → `$JIRA_KEY`.
 
 ### 8. Create the Fixer child issue
 
-Use the `multica-cli` skill — `multica issue create` resolves the assignee by name and fills in workspace context automatically:
+**Build `/tmp/fixer-payload.md` via a real shell heredoc** so `$HUMIO_LINK`,
+`$JIRA_KEY`, and every other variable expand at write-time. Do **not**
+hand-transcribe the markdown template — that path leads to URL drift
+(observed in production: `$HUMIO_LINK` getting partially substituted, or the
+LLM swapping the canonical `/logs/gravity/search?query=…` form for a bare
+`/logs?repo=gravity` that loses the time-window deep-link).
+
+```bash
+# Inputs: $SERVICE, $POD_NAME, $EXC, $FILE, $LINE, $HUMIO_LINK, $JIRA_KEY
+# (built earlier in this skill — Step 6a for HUMIO_LINK, Step 7 for JIRA_KEY).
+# These come from previous steps as plain shell vars; the heredoc inlines
+# them so no LLM substitution is involved.
+JIRA_URL="https://jira.arubanetworks.com/browse/${JIRA_KEY}"
+
+# These three blocks have already been written / truncated to file in earlier
+# steps; cat them in via $(...) inside the heredoc.
+ERROR_LOG=$(cat /tmp/error-log-${EVENT_ID}.txt 2>/dev/null || echo "_unavailable_")
+POD_CTX=$(cat /tmp/context-${EVENT_ID}.json 2>/dev/null | head -c 60000 || echo "_unavailable_")
+SOURCE_SNIP=$(cat /tmp/source-${EVENT_ID}.java 2>/dev/null || echo "_unavailable_")
+ARCH=$(cat /tmp/architecture-${SERVICE}.md 2>/dev/null || echo "_not available_")
+
+cat > /tmp/fixer-payload.md <<EOF
+## Error Context
+
+**Cluster**: \`$CLUSTER\`
+**Service**: \`$SERVICE\`
+**Pod**: \`$POD_NAME\`
+**Exception**: \`$EXC\`
+**Source**: \`$SERVICE/$FILE:$LINE\`
+**Humio**: $HUMIO_LINK
+**Jira**: $JIRA_URL
+
+## Error Log
+\`\`\`
+$ERROR_LOG
+\`\`\`
+
+## ±10-min Pod Context
+\`\`\`
+$POD_CTX
+\`\`\`
+
+## Affected Source (±20 lines around the stack frame)
+\`\`\`java
+$SOURCE_SNIP
+\`\`\`
+
+## Architecture
+
+$ARCH
+EOF
+```
+
+Then create the Fixer child issue with that payload:
 
 ```bash
 multica issue create \
@@ -148,38 +230,7 @@ multica issue create \
   --output json
 ```
 
-The description content must follow this template (the Fixer skill parses these exact headings):
-
-```markdown
-## Error Context
-
-**Cluster**: `<aqua|brooke|jedi|firth>`
-**Service**: `<service_repo>`
-**Pod**: `<pod_name>`
-**Exception**: `<ExceptionClass>`
-**Source**: `<affected_repo>/<relative_path>:<line>`
-**Humio**: <deep-link>
-**Jira**: https://jira.arubanetworks.com/browse/<JIRA_KEY>
-
-## Error Log
-```
-<raw error log, max 3000 chars>
-```
-
-## ±10-min Pod Context
-```
-<from /tmp/context-*.json, flattened, max 200 lines>
-```
-
-## Affected Source (±20 lines around the stack frame)
-```java
-<from Stash fetch>
-```
-
-## Architecture
-
-<contents of ARCHITECTURE.md from Stash, or "_not available_">
-```
+The Fixer skill parses these exact headings (`## Error Context`, `**Cluster**:`, `**Service**:`, `**Source**:`, `**Humio**:`, `**Jira**:`, etc.) — keep those literal in the heredoc body. Everything else (the values, the log/context/source/arch blocks) comes from shell vars expanded by the heredoc.
 
 Title: `[<service_repo>] <JIRA_KEY>: <ExceptionClass> at <source_file>:<line>`.
 
@@ -197,10 +248,8 @@ and Verifier can thread their replies.
 source ~/.claude/skills/iotops-verify-pr-slack/slack-templates.md 2>/dev/null || true
 # If sourcing fails (non-bash context), define slack_post inline (copy from slack-templates.md).
 
-FIXER_ISSUE_URL="${MULTICA_APP_URL:-http://localhost:3001}/issues/${FIXER_ISSUE_ID}"
-
-SCOUT_MSG=$(printf ':bug: *New IoTOps error detected*\n*Service:* `%s`  |  *Cluster:* %s\n*Exception:* `%s` at `%s:%s`\n*Jira:* <%s|%s>  |  *Humio:* <%s|Open>  |  *Issue:* <%s|View in Multica>' \
-  "$SERVICE" "$CLUSTER" "$EXC" "$FILE" "$LINE" "$JIRA_URL" "$JIRA_KEY" "$HUMIO_LINK" "$FIXER_ISSUE_URL")
+SCOUT_MSG=$(printf ':bug: *New IoTOps error detected*\n*Service:* `%s`  |  *Cluster:* %s\n*Exception:* `%s` at `%s:%s`\n*Jira:* <%s|%s>  |  *Humio:* <%s|Open>' \
+  "$SERVICE" "$CLUSTER" "$EXC" "$FILE" "$LINE" "$JIRA_URL" "$JIRA_KEY" "$HUMIO_LINK")
 
 SLACK_RESP=$(slack_post "$SCOUT_MSG")
 SLACK_THREAD_TS=$(echo "$SLACK_RESP" | jq -r '.ts // empty')
