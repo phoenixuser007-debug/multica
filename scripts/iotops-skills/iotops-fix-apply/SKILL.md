@@ -163,7 +163,7 @@ For the module that contains the change (call it `$MODULE`, e.g. `api`, `integra
 5. **If JaCoCo bundle ratio is < threshold for the module that contains your change**, the test isn't pulling its weight (or isn't running). Fixing options before reaching ctl:
    - Add another test case to the same test class that exercises a different code path of the changed file (raises both instruction + branch coverage cheaply).
    - Move the test from a sub-module that has its own JaCoCo bundle into the module that owns the changed source.
-   - If the project legitimately had pre-existing 0% coverage on that module (rare), this is a baseline-broken case — handle in step 6a.
+   - If the project legitimately had pre-existing 0% coverage on that module (e.g. `bridge-5g-stats-publisher` devel currently), this is a baseline-broken case. Run ctl normally — it will fail on coverage — then take the **coverage-baseline-broken path** in step 6a, which auto-dispatches a child issue to the **Java Dev Agent** to scaffold baseline tests.
 
 Only proceed to step 6 (full ctl gate) once steps 5b.1–5b.4 all pass. **Do not declare the fix done while the new test isn't visible to the JaCoCo gate.** A focused test alone isn't a complete fix.
 
@@ -210,13 +210,41 @@ Compare `ctl_BASELINE_OUTPUT` to the original failure tail. Two paths:
 **Baseline ALSO fails on the same step (compile / unit-test / lint / coverage)** → the breakage is pre-existing, not caused by this fix. Do this:
 1. Push the bugfix branch as **draft** anyway — Jenkins will reject it but the branch + commit history are preserved for review.
 2. Post a comment on the current issue stating: "ctl failure reproduces on clean `origin/devel` (HEAD: `<sha>`) — pre-existing breakage. Pushed as draft for review."
-3. Create a child INFRA issue assigned to the human owner (`--assignee` based on the repo's `CODEOWNERS` or fall back to `naveen.u.holla@hpe.com`):
+3. Create a child issue. **Pick the assignee based on what failed in the baseline** — coverage gaps are fixable by a code-writing agent; compile/lint/test breakage usually needs human triage:
+
+   **3a. Coverage-baseline-broken path** (baseline JaCoCo step is the failure, e.g. log contains `instructions covered ratio is 0.00` or `Coverage checks have not been met`) — assign to the **Java Dev Agent**, which scaffolds baseline tests the same way it does for CVE work.
+
+   ⚠️ **Do NOT use `--assignee "Java Dev Agent"`** for this dispatch. The `multica` resolver does case-insensitive substring matching, and there is also a `copilot java dev agent` in this workspace whose name contains `Java Dev Agent` — the CLI will reject the call with `ambiguous assignee`. Look up the agent UUID by **exact** name and PUT it via the API directly:
+   ```bash
+   ISSUE_ID=$(multica issue create \
+     --title "INFRA: $SERVICE devel has 0% baseline coverage on \`$MODULE\` — blocks Fixer JaCoCo gate" \
+     --description "$(cat /tmp/baseline-report.md)" \
+     --priority high \
+     --parent "$FIXER_ISSUE_ID" \
+     --output json | jq -r '.id')
+
+   TOKEN=$(jq -r '.token' /root/.multica/config.json)
+   WSID=$(jq -r '.workspace_id' /root/.multica/config.json)
+   SERVER=$(jq -r '.server_url' /root/.multica/config.json)
+   AGENT_ID=$(curl -sf -H "Authorization: Bearer $TOKEN" \
+     "$SERVER/api/agents?workspace_id=$WSID" \
+     | jq -r '.[] | select(.name == "Java Dev Agent") | .id')
+
+   curl -sf -X PUT \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "X-Workspace-ID: $WSID" \
+     -H "Content-Type: application/json" \
+     -d "{\"assignee_type\":\"agent\",\"assignee_id\":\"$AGENT_ID\"}" \
+     "$SERVER/api/issues/$ISSUE_ID" >/dev/null
+   ```
+
+   **3b. Compile / unit-test / lint baseline failure** — likely needs human triage (missing private-proto deps, environment setup, flaky integration tests). Assign to the repo's `CODEOWNERS` owner or fall back to `naveen.u.holla@hpe.com`:
    ```bash
    multica issue create \
      --title "INFRA: $SERVICE devel baseline broken — blocks Fixer auto-push" \
      --description "$(cat /tmp/baseline-report.md)" \
      --priority high \
-     --parent-id "$FIXER_ISSUE_ID"
+     --parent "$FIXER_ISSUE_ID"
    ```
 4. Set this issue status to `in_review` (NOT `blocked`) and **proceed to Step 8 to spawn the Verifier** — they'll pick up the draft PR.
 
@@ -254,7 +282,52 @@ git push -u origin "$BRANCH"
 
 ### 8. Spawn Verifier child
 
-Use the `multica-cli` skill. `--assignee` takes the agent name directly — no UUIDs:
+**Build the verifier payload via a real shell heredoc** so every variable
+expands at write-time. Do **not** hand-transcribe the template into the file —
+that path led to hallucinated `app.multica.io` URLs because the LLM fills in
+placeholders instead of running shell expansion.
+
+```bash
+# Compute the multica issue URL from env. MULTICA_APP_URL falls back to the
+# local frontend (http://localhost:3001); MULTICA_WORKSPACE_ID is injected by
+# the daemon for every agent run.
+FIXER_ISSUE_URL="${MULTICA_APP_URL:-http://localhost:3001}/${MULTICA_WORKSPACE_ID}/issues/${FIXER_ISSUE_ID}"
+
+# Capture the commit body and patch into shell vars so the heredoc can inline
+# them — keeping all substitution in one place, no nested $(...) inside the
+# heredoc body.
+COMMIT_BODY=$(git log -1 --format='%B')
+PATCH_BODY=$(git diff devel..HEAD)
+
+cat > /tmp/verifier-payload.md <<EOF
+## Fix Ready
+
+**Service**: \`$SERVICE\`
+**Branch**: \`$BRANCH\`
+**Jira**: $JIRA_URL
+**Jira Key**: $JIRA_KEY
+**Humio**: $HUMIO_LINK
+**Fixer Issue**: $FIXER_ISSUE_URL
+
+## TDD Summary
+
+- Failing test added: \`<test-class-name>\` (red → green)
+- Production fix: \`$REL_PATH:$LINE_NO\`
+- Quality gate: \`ctl\` PASS (compile + tests + source lint + k8s lint)
+
+## Commit
+\`\`\`
+$COMMIT_BODY
+\`\`\`
+
+## Patch
+\`\`\`diff
+$PATCH_BODY
+\`\`\`
+EOF
+```
+
+Then create the Verifier child issue with that payload:
 
 ```bash
 multica issue create \
@@ -268,34 +341,7 @@ multica issue create \
 
 Then `multica issue status "$FIXER_ISSUE_ID" done` on your own issue. Both commands documented in `multica-cli`'s `issue-ops.md`.
 
-Verifier description (headings are parsed by the Verifier skill):
-
-```markdown
-## Fix Ready
-
-**Service**: `<service>`
-**Branch**: `<bugfix/…>`
-**Jira**: <jira_url>
-**Jira Key**: <JIRA_KEY>
-**Humio**: <humio_link>
-**Fixer Issue**: <multica_url_for_this_issue>
-
-## TDD Summary
-
-- Failing test added: `<test-class-name>` (red → green)
-- Production fix: `<relative_path>:<line>`
-- Quality gate: `ctl` PASS (compile + tests + source lint + k8s lint)
-
-## Commit
-```
-<git log -1 --format="%B" output>
-```
-
-## Patch
-```diff
-<git diff devel..HEAD>
-```
-```
+The Verifier parses headings (`## Fix Ready`, `**Service**:`, `**Branch**:`, etc.) — keep those literal. Everything else (service name, branch, Jira URL, Fixer Issue URL, commit body, patch) comes from shell vars expanded inside the heredoc.
 
 Clean up `WORKDIR`.
 
